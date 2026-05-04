@@ -459,6 +459,20 @@ def _to_responses_input(messages):
     return result
 
 
+def _truncate_large_content(msg, max_chars=8000):
+    """Truncate overly large tool_result/text content blocks to avoid context overflow."""
+    content = msg.get("content")
+    if not isinstance(content, list): return
+    for b in content:
+        if not isinstance(b, dict): continue
+        ct = b.get("content", "")
+        if isinstance(ct, str) and len(ct) > max_chars:
+            b["content"] = ct[:max_chars] + f"\n... [truncated {len(ct) - max_chars} chars]"
+        elif isinstance(ct, list):
+            for item in ct:
+                if isinstance(item, dict) and isinstance(item.get("text"), str) and len(item["text"]) > max_chars:
+                    item["text"] = item["text"][:max_chars] + f"\n... [truncated {len(item['text']) - max_chars} chars]"
+
 def _msgs_claude2oai(messages):
     result = []
     for msg in messages:
@@ -494,7 +508,10 @@ def _msgs_claude2oai(messages):
                     tr = b.get("content", "")
                     if isinstance(tr, list):
                         tr = "\n".join(x.get("text", "") for x in tr if isinstance(x, dict) and x.get("type") == "text")
-                    result.append({"role": "tool", "tool_call_id": b.get("tool_use_id") or '', "content": tr if isinstance(tr, str) else str(tr)})
+                    tr_content = tr if isinstance(tr, str) else str(tr)
+                    if len(tr_content) > 8000:
+                        tr_content = tr_content[:8000] + f"\n... [truncated {len(tr_content) - 8000} chars]"
+                    result.append({"role": "tool", "tool_call_id": b.get("tool_use_id") or '', "content": tr_content})
                 elif b.get("type") == "image":
                     src = b.get("source") or {}
                     if src.get("type") == "base64" and src.get("data"):
@@ -669,6 +686,7 @@ class NativeClaudeSession(BaseSession):
 
     def ask(self, msg):
         assert type(msg) is dict
+        _truncate_large_content(msg)
         with self.lock:
             self.history.append(msg)
             trim_messages_history(self.history, self.context_win)

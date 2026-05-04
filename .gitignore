@@ -92,6 +92,7 @@ memory/L4_raw_sessions/*
 .vs/
 restore_commit.txt
 
+backups/
 sche_tasks/
 # CDP Bridge 密钥配置（首次运行自动生成）
 assets/tmwd_cdp_bridge/config.js
