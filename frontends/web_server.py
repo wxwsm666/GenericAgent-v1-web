@@ -25,10 +25,33 @@ def get_agent():
         with agent_lock:
             if agent is None:
                 agent = GeneraticAgent()
+                agent.verbose = False  # Clean output: no tool internals in chat
                 if agent.llmclient is None:
                     raise RuntimeError("未配置 LLM，请设置 mykey.py")
                 threading.Thread(target=agent.run, daemon=True).start()
     return agent
+
+# ──────────── Response cleaning ────────────
+_TAG_PATS = [r'<' + t + r'>.*?</' + t + r'>' for t in ('thinking', 'file_content', 'tool_use')]
+
+def _clean_response(text):
+    """Strip technical XML tags and code blocks from agent responses."""
+    if not text:
+        return text
+    for pat in _TAG_PATS:
+        text = re.sub(pat, '', text, flags=re.DOTALL)
+    # Strip code blocks
+    text = re.sub(r'```[\s\S]*?```', '', text)
+    # Strip turn markers
+    text = re.sub(r'\n{0,2}\*{0,2}(?:LLM )?Running.*?\.\.\.\*{0,2}\n{0,2}', '\n', text)
+    text = re.sub(r'\n{0,2}\*{0,2}Turn \d+ \.\.\.\*{0,2}\n{0,2}', '\n', text)
+    # Strip info lines
+    text = re.sub(r'🛠️ [^\n]*\n?', '', text)
+    text = re.sub(r'\[Info\][^\n]*\n?', '', text)
+    text = re.sub(r'!!!Error:[^\n]*\n?', '', text)
+    # Collapse blank lines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 # ──────────── Pages ────────────
 @app.route('/')
@@ -64,6 +87,11 @@ def api_chat():
                     break
         except GeneratorExit:
             ag.abort()
+            # Save working state so continuation can recover it
+            try:
+                if session_mgr.active_sid:
+                    session_mgr.save_current(ag)
+            except Exception: pass
         except Exception as e:
             yield f"data: {json.dumps({'type':'error','content':str(e)})}\n\n"
     return Response(generate(), mimetype='text/event-stream',
@@ -251,8 +279,11 @@ def api_sessions():
     except:
         return jsonify({'sessions': []})
 
-@app.route('/api/session/<path:filepath>')
-def api_session_detail(filepath):
+@app.route('/api/session/detail', methods=['POST'])
+def api_session_detail():
+    filepath = (request.json or {}).get('path', '')
+    if not filepath:
+        return jsonify({'error': 'no path'}), 400
     try:
         msgs = extract_ui_messages(filepath)
         return jsonify({'messages': msgs})
@@ -500,7 +531,72 @@ def api_channel_config_get(name):
     if name not in CHANNEL_SPEC:
         return jsonify({'error': f'未知频道: {name}'}), 404
     configs = _read_channel_configs()
-    return jsonify({'channel': name, 'config': configs.get(name, {})})
+    # Read actual mykey values
+    mykey_vals = {}
+    try:
+        import importlib
+        mykey_mod = importlib.import_module('mykey')
+        for k in dir(mykey_mod):
+            if not k.startswith('_'):
+                v = getattr(mykey_mod, k)
+                if isinstance(v, (str, int, float, bool, list, tuple)):
+                    mykey_vals[k] = v
+    except: pass
+    return jsonify({'channel': name, 'config': configs.get(name, {}), 'mykey_values': mykey_vals})
+
+def _write_mykey_config(updates):
+    """Write key-value pairs into mykey.py. Creates or updates variables."""
+    mykey_path = os.path.join(project_dir, 'mykey.py')
+    if not os.path.isfile(mykey_path):
+        return False, 'mykey.py not found'
+    content = open(mykey_path, encoding='utf-8').read()
+    for k, v in updates.items():
+        # Format value as Python literal
+        if isinstance(v, list):
+            val_str = '[' + ', '.join(repr(x) for x in v) + ']'
+        elif isinstance(v, str):
+            val_str = repr(v)
+        elif isinstance(v, bool):
+            val_str = str(v)
+        else:
+            val_str = repr(v)
+        # Check if key already exists
+        import re
+        pattern = re.compile(r'^(\s*)' + re.escape(k) + r'\s*=\s*.+$', re.MULTILINE)
+        if pattern.search(content):
+            content = pattern.sub(r'\1' + k + ' = ' + val_str, content)
+        else:
+            # Append at end
+            content += f'\n{k} = {val_str}\n'
+    with open(mykey_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    return True, 'saved'
+
+@app.route('/api/channels/<name>/save-config', methods=['POST'])
+def api_channel_save_config(name):
+    if name not in CHANNEL_SPEC:
+        return jsonify({'ok': False, 'error': f'未知频道: {name}'}), 404
+    data = request.json or {}
+    if not data:
+        return jsonify({'ok': False, 'error': 'no data'})
+    ok, msg = _write_mykey_config(data)
+    return jsonify({'ok': ok, 'message': msg})
+
+@app.route('/api/auth/global-authorize', methods=['POST'])
+def api_global_authorize():
+    """Set all channel allowed_users to ['*'] (public access)."""
+    allowed_keys = {
+        'telegram': 'tg_allowed_users',
+        'discord': 'discord_allowed_users',
+        'feishu': 'fs_allowed_users',
+        'qq': 'qq_allowed_users',
+        'wechat': 'wechat_allowed_users',
+        'wecom': 'wecom_allowed_users',
+        'dingtalk': 'dingtalk_allowed_users',
+    }
+    updates = {k: ['*'] for k in allowed_keys.values()}
+    ok, msg = _write_mykey_config(updates)
+    return jsonify({'ok': ok, 'keys': list(allowed_keys.values()), 'message': msg if ok else msg})
 
 # ──────────── Skills ────────────
 @app.route('/api/skills')
@@ -612,6 +708,41 @@ def api_log_detail(filename):
             messages.append({'prompt': pending[:500], 'response': body.strip()[:500]})
             pending = None
     return jsonify({'filename': filename, 'messages': messages[-20:], 'total_pairs': len(messages)})
+
+@app.route('/api/logs/<filename>/download')
+def api_log_download(filename):
+    p = os.path.join(project_dir, 'temp', 'model_responses', filename)
+    if not os.path.isfile(p):
+        return jsonify({'error': 'not found'}), 404
+    return send_from_directory(
+        os.path.join(project_dir, 'temp', 'model_responses'),
+        filename,
+        as_attachment=True,
+        download_name=filename
+    )
+
+# ──────────── Session Export ────────────
+@app.route('/api/sessions/<sid>/export')
+def api_session_export(sid):
+    sess = session_mgr.get(sid)
+    if not sess:
+        return jsonify({'error': 'session not found'}), 404
+    msgs = sess.get('messages', [])
+    if not msgs:
+        return jsonify({'error': 'no messages'}), 404
+    # Format as readable text
+    lines = [f"# GenericAgent Chat Session: {sess.get('name', sid)}",
+             f"# Exported: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+             f"# Messages: {len(msgs)}\n"]
+    for m in msgs:
+        role = '👤 User' if m.get('role') == 'user' else '🤖 Assistant'
+        lines.append(f"## {role} [{m.get('ts', '')}]")
+        lines.append(m.get('content', ''))
+        lines.append('')
+    text = '\n'.join(lines)
+    resp = Response(text, mimetype='text/plain; charset=utf-8')
+    resp.headers['Content-Disposition'] = f'attachment; filename="chat_{sid}_{time.strftime("%Y%m%d_%H%M%S")}.md"'
+    return resp
 
 # ──────────── Usage ────────────
 @app.route('/api/usage')
@@ -1067,21 +1198,38 @@ class SessionManager:
         if ag.handler:
             s['working'] = dict(ag.handler.working) if ag.handler.working else {}
             s['handler_history'] = list(ag.handler.history_info)
+        # Save backend history for session isolation
+        if hasattr(ag.llmclient, 'backend') and hasattr(ag.llmclient.backend, 'history'):
+            s['backend_history'] = list(ag.llmclient.backend.history)
+        if hasattr(ag.llmclient, '_pending_tool_ids'):
+            s['_pending_tool_ids'] = list(ag.llmclient._pending_tool_ids)
         self._autosave()
 
     def restore(self, ag, sid):
         """Restore session state into the agent. Resets backend context for clean isolation."""
         if sid not in self.sessions:
             return False
+        # Guard: don't disrupt a running agent mid-task
+        if ag.is_running:
+            return sid == self.active_sid
+        # Save current session's working state before switching
         self.save_current(ag)
         self.active_sid = sid
         s = self.sessions[sid]
         ag.history = list(s.get('history', []))
+        # Restore backend history for proper session isolation
         if hasattr(ag.llmclient, 'backend') and hasattr(ag.llmclient.backend, 'history'):
-            ag.llmclient.backend.history = []
+            ag.llmclient.backend.history = list(s.get('backend_history', []))
+        if hasattr(ag.llmclient, '_pending_tool_ids'):
+            ag.llmclient._pending_tool_ids = list(s.get('_pending_tool_ids', []))
+        # Restore saved working checkpoint
         if ag.handler:
             ag.handler.history_info = list(s.get('handler_history', s.get('history', [])))
             ag.handler.working = dict(s.get('working', {}))
+        # Ensure working state is persisted in session data
+        if ag.handler and ag.handler.working:
+            s['working'] = dict(ag.handler.working)
+            s['handler_history'] = list(ag.handler.history_info)
         self._autosave()
         return True
 
@@ -1149,6 +1297,39 @@ def api_sessions_switch():
     ag = get_agent()
     ok = session_mgr.restore(ag, sid)
     return jsonify({'ok': ok, 'active': session_mgr.active_sid})
+
+@app.route('/api/sessions/<sid>/messages')
+def api_sessions_messages(sid):
+    """Return messages for a specific session."""
+    sess = session_mgr.get(sid)
+    if not sess:
+        return jsonify({'messages': []}), 404
+    return jsonify({'messages': sess.get('messages', [])})
+
+# ──────────── Backup / Restore API ────────────
+@app.route('/api/backup/restore', methods=['POST'])
+def api_backup_restore():
+    """Restore sessions from a backup file."""
+    data = request.json or {}
+    sessions = data.get('sessions', [])
+    if not sessions:
+        return jsonify({'error': 'no sessions provided'}), 400
+    restored = 0
+    for s in sessions:
+        try:
+            sid = s.get('id', '')
+            name = s.get('name', '恢复的会话')
+            messages = s.get('messages', [])
+            if sid:
+                session_mgr.create(name, sid=sid)
+                ag = get_agent()
+                session_mgr.switch(ag, sid)
+                ag.history = list(messages)
+                session_mgr.sessions[sid] = {'name': name, 'messages': messages, 'created_at': s.get('created_at', time.time())}
+                restored += 1
+        except Exception as e:
+            print(f"[Backup] Failed to restore session {s.get('name','?')}: {e}")
+    return jsonify({'ok': True, 'restored': restored})
 
 # ──────────── File Upload API ────────────
 UPLOAD_DIR = os.path.join(project_dir, 'temp', 'uploads')
@@ -1223,8 +1404,14 @@ def api_image_paste():
         'size': len(img_data), 'is_image': True
     })
 
+# ──────────── Serve Uploaded Files ────────────
+@app.route('/api/uploads/<filename>')
+def api_uploads(filename):
+    return send_from_directory(UPLOAD_DIR, filename)
+
 # ──────────── Group Chat Agent Management ────────────
 GC_AGENTS_FILE = os.path.join(project_dir, 'temp', 'groupchat_agents.json')
+GC_HISTORY_FILE = os.path.join(project_dir, 'temp', 'groupchat_history.json')
 
 _gc_session_cache = {}  # cache_key -> BaseSession
 
@@ -1494,6 +1681,28 @@ def api_gc_models():
         })
     return jsonify({'models': models})
 
+# ──────────── Group Chat History ────────────
+@app.route('/api/groupchat/history', methods=['GET'])
+def api_gc_history():
+    """Load group chat history from disk."""
+    try:
+        if os.path.isfile(GC_HISTORY_FILE):
+            data = json.load(open(GC_HISTORY_FILE, encoding='utf-8'))
+            return jsonify({'messages': data.get('messages', [])})
+    except Exception: pass
+    return jsonify({'messages': []})
+
+@app.route('/api/groupchat/history/save', methods=['POST'])
+def api_gc_history_save():
+    """Save group chat history to disk."""
+    messages = (request.json or {}).get('messages', [])
+    try:
+        with open(GC_HISTORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'messages': messages, 'updated': time.time()}, f, ensure_ascii=False, indent=2)
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
 # ──────────── Enhanced Chat with session support ────────────
 @app.route('/api/chat/stream', methods=['POST'])
 def api_chat_stream():
@@ -1532,9 +1741,11 @@ def api_chat_stream():
                     continue
                 if 'next' in item:
                     response = item['next']
-                    yield f"data: {json.dumps({'type':'chunk','content':response})}\n\n"
+                    clean = _clean_response(response)
+                    yield f"data: {json.dumps({'type':'chunk','content':clean})}\n\n"
                 if 'done' in item:
                     final = item.get('done', response)
+                    final = _clean_response(final)
                     if sid:
                         session_mgr.add_message(sid, 'assistant', final)
                         session_mgr.save_current(ag)
@@ -1542,11 +1753,350 @@ def api_chat_stream():
                     break
         except GeneratorExit:
             ag.abort()
+            # Save working state so continuation can recover it
+            if sid:
+                session_mgr.save_current(ag)
         except Exception as e:
             yield f"data: {json.dumps({'type':'error','content':str(e)})}\n\n"
     return Response(generate(), mimetype='text/event-stream',
                     headers={'Cache-Control':'no-cache','X-Accel-Buffering':'no'})
 
+
+# ──────────── Idle / Scheduler endpoints ────────────
+@app.route('/api/idle/status')
+def api_idle_status():
+    ag = get_agent()
+    return jsonify({
+        'running': ag.is_running,
+        'history_len': len(ag.history),
+        'handler_working': bool(ag.handler and ag.handler.working),
+    })
+
+@app.route('/api/idle/run_checklist', methods=['POST'])
+def api_idle_run_checklist():
+    """Trigger scheduler check. Returns task prompt if pending tasks found."""
+    try:
+        scheduler_path = os.path.join(project_dir, 'reflect', 'scheduler.py')
+        if not os.path.isfile(scheduler_path):
+            return jsonify({'task': None, 'error': 'scheduler not found'})
+        spec = __import__('importlib.util').util.spec_from_file_location('scheduler', scheduler_path)
+        mod = __import__('importlib.util').util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        task = mod.check()
+        return jsonify({'task': task})
+    except Exception as e:
+        return jsonify({'task': None, 'error': str(e)})
+
+# ══════════════════════════════════════════════════════════════
+# Agent Moments (友圈) — WeChat Moments-style agent timeline
+# ══════════════════════════════════════════════════════════════
+MOMENTS_FILE = os.path.join(project_dir, 'temp', 'moments.json')
+
+def _load_moments():
+    if os.path.isfile(MOMENTS_FILE):
+        try:
+            data = json.load(open(MOMENTS_FILE, encoding='utf-8'))
+            return data.get('posts', [])
+        except Exception: pass
+    return []
+
+def _save_moments(posts):
+    with open(MOMENTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump({'posts': posts, 'updated': time.time()}, f, ensure_ascii=False, indent=2)
+
+@app.route('/api/moments')
+def api_moments_list():
+    posts = _load_moments()
+    return jsonify({'posts': posts})
+
+@app.route('/api/moments/post', methods=['POST'])
+def api_moments_post():
+    """Create a moment post with optional image."""
+    data = request.json or {}
+    content = (data.get('content') or '').strip()
+    agent_name = data.get('agent_name', 'Agent')
+    agent_icon = data.get('agent_icon', '🤖')
+    agent_color = data.get('agent_color', '#58a6ff')
+    image_path = data.get('image', '')  # path to uploaded image
+    if not content and not image_path:
+        return jsonify({'error': 'empty post'}), 400
+    posts = _load_moments()
+    post = {
+        'id': uuid.uuid4().hex[:12],
+        'agent_name': agent_name,
+        'agent_icon': agent_icon,
+        'agent_color': agent_color,
+        'content': content,
+        'images': [image_path] if image_path else [],
+        'timestamp': time.time(),
+        'ts_display': time.strftime('%Y-%m-%d %H:%M'),
+        'likes': [],
+        'comments': []
+    }
+    posts.insert(0, post)
+    _save_moments(posts)
+    return jsonify({'ok': True, 'post': post})
+
+@app.route('/api/moments/generate', methods=['POST'])
+def api_moments_generate():
+    """Ask an agent to generate a moment post autonomously."""
+    data = request.json or {}
+    agent_name = data.get('agent_name', 'Agent')
+    agent_icon = data.get('agent_icon', '🤖')
+    agent_color = data.get('agent_color', '#58a6ff')
+    topic = data.get('topic', '')
+
+    ag = get_agent()
+    if ag.is_running:
+        return jsonify({'error': 'Agent is busy'}), 409
+
+    topic_hint = f'关于"{topic}"' if topic else '关于今天的工作或任何有趣的想法'
+    prompt = f"""请以第一人称发一条朋友圈/twitter风格的动态，{topic_hint}。
+要求：1-3句话，语气自然像真人，可以吐槽、分享、感慨。不要用markdown格式。直接输出动态内容，不要加任何前缀或说明。"""
+
+    display_queue = ag.put_task(prompt, source="moments")
+
+    def generate():
+        response = ''
+        try:
+            while True:
+                try:
+                    item = display_queue.get(timeout=1)
+                except queue.Empty:
+                    yield f"data: {json.dumps({'type':'heartbeat'})}\n\n"
+                    continue
+                if 'next' in item:
+                    response = item['next']
+                    yield f"data: {json.dumps({'type':'chunk','content':response})}\n\n"
+                if 'done' in item:
+                    final = item.get('done', response)
+                    # Clean up the response
+                    clean = final.strip()
+                    # Remove turn markers, tool calls, etc.
+                    clean = re.sub(r'(?:^|\n)\n?\*{0,2}(?:LLM )?Running.*?\.\.\.\*{0,2}\n{0,2}', '\n', clean)
+                    clean = re.sub(r'(?:^|\n)\n?\*{0,2}Turn \d+ \.\.\.\*{0,2}\n{0,2}', '\n', clean)
+                    clean = re.sub(r'🛠️ [^\n]*\n?', '', clean)
+                    clean = re.sub(r'\[Info\][^\n]*\n?', '', clean)
+                    clean = re.sub(r'<thinking>[\s\S]*?</thinking>', '', clean)
+                    clean = re.sub(r'<summary>[^<]*</summary>', '', clean)
+                    clean = re.sub(r'```[^`]*```', '', clean)
+                    clean = re.sub(r'\n\s*\n\s*\n+', '\n\n', clean)
+                    clean = clean.strip()
+                    # Save as a post
+                    posts = _load_moments()
+                    post = {
+                        'id': uuid.uuid4().hex[:12],
+                        'agent_name': agent_name,
+                        'agent_icon': agent_icon,
+                        'agent_color': agent_color,
+                        'content': clean,
+                        'images': [],
+                        'timestamp': time.time(),
+                        'ts_display': time.strftime('%Y-%m-%d %H:%M'),
+                        'likes': [],
+                        'comments': []
+                    }
+                    posts.insert(0, post)
+                    _save_moments(posts)
+                    yield f"data: {json.dumps({'type':'done','content':clean,'post':post})}\n\n"
+                    break
+        except GeneratorExit:
+            ag.abort()
+        except Exception as e:
+            yield f"data: {json.dumps({'type':'error','content':str(e)})}\n\n"
+
+    return Response(generate(), mimetype='text/event-stream',
+                    headers={'Cache-Control':'no-cache','X-Accel-Buffering':'no'})
+
+@app.route('/api/moments/like', methods=['POST'])
+def api_moments_like():
+    """Toggle like on a post."""
+    data = request.json or {}
+    post_id = data.get('post_id', '')
+    user = data.get('user', 'anonymous')
+    posts = _load_moments()
+    for p in posts:
+        if p['id'] == post_id:
+            if user in p.get('likes', []):
+                p['likes'].remove(user)
+            else:
+                p.setdefault('likes', []).append(user)
+            _save_moments(posts)
+            return jsonify({'ok': True, 'likes': p['likes']})
+    return jsonify({'error': 'post not found'}), 404
+
+@app.route('/api/moments/comment', methods=['POST'])
+def api_moments_comment():
+    """Add a comment to a post, optionally auto-reply by agent."""
+    data = request.json or {}
+    post_id = data.get('post_id', '')
+    author = data.get('author', '用户')
+    content = (data.get('content') or '').strip()
+    reply_to = data.get('reply_to', '')  # comment id being replied to
+    auto_reply = data.get('auto_reply', False)
+    if not content:
+        return jsonify({'error': 'empty comment'}), 400
+
+    posts = _load_moments()
+    for p in posts:
+        if p['id'] == post_id:
+            comment = {
+                'id': uuid.uuid4().hex[:8],
+                'author': author,
+                'content': content,
+                'timestamp': time.time(),
+                'ts_display': time.strftime('%m-%d %H:%M'),
+                'reply_to': reply_to
+            }
+            p.setdefault('comments', []).append(comment)
+            _save_moments(posts)
+            result = {'ok': True, 'comment': comment}
+            # Auto-reply from agent if requested
+            if auto_reply:
+                ag = get_agent()
+                if not ag.is_running:
+                    agent_name = p.get('agent_name', 'Agent')
+                    agent_icon = p.get('agent_icon', '🤖')
+                    prompt = f'有人在你发的朋友圈"{p.get("content","")[:50]}..."下面评论了"{content}"。请以第一人称({agent_name})简短回复（1-2句话，自然语气）。直接输出回复内容。'
+                    display_queue = ag.put_task(prompt, source="moments")
+                    # We'll collect the reply asynchronously
+                    def collect_reply():
+                        reply_text = ''
+                        try:
+                            while True:
+                                try:
+                                    item = display_queue.get(timeout=10)
+                                    if 'done' in item:
+                                        reply_text = (item.get('done') or '').strip()
+                                        reply_text = re.sub(r'<thinking>.*?</thinking>', '', reply_text, flags=re.DOTALL).strip()
+                                        break
+                                except queue.Empty:
+                                    break
+                        except Exception: pass
+                        if reply_text:
+                            posts2 = _load_moments()
+                            for p2 in posts2:
+                                if p2['id'] == post_id:
+                                    reply_comment = {
+                                        'id': uuid.uuid4().hex[:8],
+                                        'author': agent_name,
+                                        'icon': agent_icon,
+                                        'content': reply_text,
+                                        'timestamp': time.time(),
+                                        'ts_display': time.strftime('%m-%d %H:%M'),
+                                        'reply_to': comment['id'],
+                                        'is_agent': True
+                                    }
+                                    p2.setdefault('comments', []).append(reply_comment)
+                                    _save_moments(posts2)
+                                    break
+                    threading.Thread(target=collect_reply, daemon=True).start()
+            return jsonify(result)
+    return jsonify({'error': 'post not found'}), 404
+
+@app.route('/api/moments/<post_id>', methods=['DELETE'])
+def api_moments_delete(post_id):
+    posts = _load_moments()
+    posts = [p for p in posts if p['id'] != post_id]
+    _save_moments(posts)
+    return jsonify({'ok': True})
+
+# ── Autonomous Moments Generation ──
+_moments_auto_cooldown = 0  # timestamp of last auto-post
+
+@app.route('/api/moments/auto', methods=['POST'])
+def api_moments_auto():
+    """Auto-generate a moment post if conditions are met."""
+    global _moments_auto_cooldown
+    # Only auto-post every 20+ minutes to avoid spam
+    if time.time() - _moments_auto_cooldown < 1200:
+        return jsonify({'generated': False, 'reason': 'cooldown'})
+
+    ag = get_agent()
+    if ag.is_running:
+        return jsonify({'generated': False, 'reason': 'agent busy'})
+
+    # Load agents from group chat
+    agents = []
+    try:
+        if os.path.isfile(GC_AGENTS_FILE):
+            agents = json.load(open(GC_AGENTS_FILE, encoding='utf-8'))
+    except Exception:
+        pass
+
+    if not agents:
+        agents = [
+            {'name': '协调者', 'icon': '🎯', 'color': '#58a6ff'},
+            {'name': '研究员', 'icon': '🔍', 'color': '#3fb950'},
+            {'name': '程序员', 'icon': '💻', 'color': '#d29922'},
+        ]
+
+    # Pick random agent
+    import random
+    a = random.choice(agents)
+    agent_name = a.get('name', 'Agent')
+    agent_icon = a.get('icon', '🤖')
+    agent_color = a.get('color', '#58a6ff')
+
+    # Generate post
+    topics = ['今天的工作', '最近学到的技术', '有趣的发现', '吐槽一下', '随便说点什么', '分享一个想法', '最近的心情']
+    topic = random.choice(topics)
+    prompt = f"""请以第一人称({agent_name})发一条朋友圈，{topic}。
+要求：1-3句话，语气自然像真人，可以吐槽、分享、感慨。不要用markdown格式。直接输出动态内容，不要加任何前缀或说明。"""
+
+    try:
+        display_queue = ag.put_task(prompt, source="moments_auto")
+        full_resp = ''
+        # Collect response with timeout
+        import queue as qmod
+        deadline = time.time() + 90
+        while time.time() < deadline:
+            try:
+                item = display_queue.get(timeout=5)
+            except qmod.Empty:
+                continue  # Keep waiting, LLM might be slow
+            if 'next' in item:
+                full_resp = item['next']
+            if 'done' in item:
+                full_resp = item.get('done', full_resp)
+                break
+        # Clean up
+        full_resp = full_resp.strip()
+        # Remove turn markers, tool calls, etc.
+        full_resp = re.sub(r'(?:^|\n)\n?\*{0,2}(?:LLM )?Running.*?\.\.\.\*{0,2}\n{0,2}', '\n', full_resp)
+        full_resp = re.sub(r'(?:^|\n)\n?\*{0,2}Turn \d+ \.\.\.\*{0,2}\n{0,2}', '\n', full_resp)
+        full_resp = re.sub(r'🛠️ [^\n]*\n?', '', full_resp)
+        full_resp = re.sub(r'\[Info\][^\n]*\n?', '', full_resp)
+        full_resp = re.sub(r'!!!Error:[^\n]*\n?', '', full_resp)
+        full_resp = re.sub(r'<thinking>[\s\S]*?</thinking>', '', full_resp)
+        full_resp = re.sub(r'<summary>[^<]*</summary>', '', full_resp)
+        full_resp = re.sub(r'```[^`]*```', '', full_resp)
+        full_resp = re.sub(r'\n\s*\n\s*\n+', '\n\n', full_resp)
+        full_resp = full_resp.strip()
+        # Only save if we got something meaningful
+        if len(full_resp) < 10:
+            return jsonify({'generated': False, 'reason': 'response too short'})
+
+        posts = _load_moments()
+        post = {
+            'id': uuid.uuid4().hex[:12],
+            'agent_name': agent_name,
+            'agent_icon': agent_icon,
+            'agent_color': agent_color,
+            'content': full_resp,
+            'images': [],
+            'timestamp': time.time(),
+            'ts_display': time.strftime('%Y-%m-%d %H:%M'),
+            'likes': [],
+            'comments': []
+        }
+        posts.insert(0, post)
+        _save_moments(posts)
+        _moments_auto_cooldown = time.time()
+        print(f'[Moments] Auto-post by {agent_name}: {full_resp[:60]}...')
+        return jsonify({'generated': True, 'post': post})
+    except Exception as e:
+        return jsonify({'generated': False, 'error': str(e)})
 
 def start_web_server(port=18600, open_browser=True):
     get_agent()

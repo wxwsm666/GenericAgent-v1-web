@@ -17,7 +17,7 @@ VER, MSG_USER, MSG_BOT, ITEM_TEXT, STATE_FINISH = '2.1.10', 1, 2, 1, 2
 ILINK_APP_ID = 'bot'
 ILINK_APP_CLIENT_VERSION = (2 << 16) | (1 << 8) | 10
 UA = f'openclaw-weixin/{VER}'
-ITEM_IMAGE, ITEM_FILE, ITEM_VIDEO = 2, 4, 5
+ITEM_IMAGE, ITEM_FILE, ITEM_VIDEO, ITEM_VOICE = 2, 4, 5, 3
 CDN_BASE = 'https://novac2c.cdn.weixin.qq.com/c2c'
 
 def _uin():
@@ -210,9 +210,12 @@ class WxBotClient:
     @staticmethod
     def is_user_msg(msg): return msg.get('message_type') == MSG_USER
 
-    def run_loop(self, on_message, poll_timeout=30):
+    def run_loop(self, on_message, poll_timeout=30, max_retries=50):
         print(f'[Bot] 监听中... (bot_id={self.bot_id})')
         seen = set()
+        backoff = 2  # initial backoff seconds
+        consecutive_success = 0
+        retry_count = 0
         while True:
             try:
                 for msg in self.get_updates(poll_timeout):
@@ -222,8 +225,21 @@ class WxBotClient:
                     if len(seen) > 5000: seen = set(list(seen)[-2000:])
                     try: on_message(self, msg)
                     except Exception as e: print(f'[Bot] 回调异常: {e}')
+                # Reset backoff on successful poll
+                consecutive_success += 1
+                if consecutive_success >= 5:
+                    backoff = 2
+                    retry_count = 0
             except KeyboardInterrupt: print('[Bot] 退出'); break
-            except Exception as e: print(f'[Bot] 异常: {e}，5s重试'); time.sleep(5)
+            except Exception as e:
+                consecutive_success = 0
+                retry_count += 1
+                if retry_count >= max_retries:
+                    print(f'[Bot] 重试{max_retries}次后退出: {e}')
+                    break
+                print(f'[Bot] 异常: {e}，{backoff}s后重试 ({retry_count}/{max_retries})')
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 300)  # exponential backoff capped at 5 min
 
 # ── Unified media download (IMAGE/VIDEO/FILE/VOICE) ──
 _MEDIA_KEYS = {'image_item': '.jpg', 'video_item': '.mp4', 'file_item': '', 'voice_item': '.silk'}
@@ -254,6 +270,7 @@ def _dl_media(items):
 
 agent = GeneraticAgent()
 agent.verbose = False
+user_states = {}  # {user_id: {last_active, task_running}}
 
 _TAG_PATS = [r'<' + t + r'>.*?</' + t + r'>' for t in ('thinking', 'tool_use')]
 _TAG_PATS.append(r'<file_content>.*?</file_content>')
@@ -302,19 +319,80 @@ def _turn_parts(t):
     return (([parts[0]] if parts[0].strip() else []) + turns[:-1], turns[-1])
 
 def on_message(bot, msg):
+    global user_states
     text = bot.extract_text(msg).strip()
     uid = msg.get('from_user_id', '')
     ctx = msg.get('context_token', '')
+    ts = time.time()
+
+    # Detect voice messages
+    voice_items = [it.get('voice_item') for it in msg.get('item_list', []) if it.get('type') == ITEM_VOICE]
+    is_voice = bool(voice_items)
+
     media_paths = _dl_media(msg.get('item_list', []))
-    if not text and not media_paths: return
-    if media_paths:
+    if not text and not media_paths and not is_voice: return
+
+    # Voice transcription
+    if is_voice and voice_items:
+        voice_files = [p for p in media_paths if p.endswith('.silk') or p.lower().endswith(('.silk', '.amr', '.wav'))]
+        if voice_files:
+            try:
+                from voice_asr import transcribe
+                transcribed = transcribe(voice_files[0], language='zh')
+                if transcribed:
+                    text = (text + ' ' + transcribed).strip()
+                    print(f'[WX] Voice transcribed: {transcribed[:80]}', file=sys.__stdout__)
+            except ImportError:
+                print('[WX] voice_asr module not available', file=sys.__stdout__)
+            except Exception as e:
+                print(f'[WX] Voice transcription failed: {e}', file=sys.__stdout__)
+
+    if media_paths and not is_voice:
         text = (text + '\n' if text else '') + '\n'.join(f'[用户发送文件: {p}]' for p in media_paths)
     print(f'[WX] 收到: {text[:80]}', file=sys.__stdout__)
+
+    # Per-user state init
+    if uid not in user_states:
+        user_states[uid] = {'last_active': 0, 'task_running': False}
+
+    # Interrupt: if user sends new message while old task is running, abort old task
+    if user_states[uid].get('task_running') and ts - user_states[uid].get('last_active', 0) > 1:
+        print(f'[WX] Interrupting previous task for {uid}', file=sys.__stdout__)
+        agent.abort()
+        time.sleep(0.5)
+
+    user_states[uid]['last_active'] = ts
 
     # Commands
     if text in ('/stop', '/abort'):
         agent.abort()
+        user_states[uid]['task_running'] = False
         bot.send_text(uid, '已停止', context_token=ctx)
+        return
+    if text == '/new':
+        agent.abort()
+        time.sleep(0.3)
+        user_states[uid]['task_running'] = False
+        if hasattr(agent, 'history'): agent.history = []
+        bot.send_text(uid, '🆕 已开启新对话', context_token=ctx)
+        return
+    if text.startswith('/continue'):
+        from continue_cmd import list_sessions, format_list, restore, reset_conversation
+        args = text.split()
+        if len(args) > 1:
+            try:
+                n = int(args[1])
+                sessions = list_sessions()
+                if 1 <= n <= len(sessions):
+                    reset_conversation(agent, message=None)
+                    msg, _ = restore(agent, sessions[n-1][0])
+                    bot.send_text(uid, msg, context_token=ctx)
+                else:
+                    bot.send_text(uid, f'索引越界 (1-{len(sessions)})', context_token=ctx)
+            except ValueError:
+                bot.send_text(uid, '用法: /continue <N>', context_token=ctx)
+        else:
+            bot.send_text(uid, format_list(list_sessions()), context_token=ctx)
         return
     if text.startswith('/llm'):
         args = text.split()
@@ -329,12 +407,16 @@ def on_message(bot, msg):
             bot.send_text(uid, 'LLMs:\n' + '\n'.join(lines), context_token=ctx)
         return
 
+    user_states[uid]['task_running'] = True
+
     def _handle():
+        nonlocal text
         prompt = text if text.startswith('/') else f"If you need to show files to user, use [FILE:filepath] in your response.\n\n{text}"
         dq = agent.put_task(prompt, source="wechat")
         try: bot.send_typing(uid)
         except: pass
-        result = ''; sent = 0; mi = 0; last_send = 0
+        result = ''; sent = 0; mi = 0; last_send = 0; timed_out = False
+        done = []; partial = ''
         def _wx_send(text):
             s = text.strip(); t0 = time.time()
             try:
@@ -359,13 +441,24 @@ def on_message(bot, msg):
                 done, partial = _turn_parts(raw)
                 if len(done) > sent:
                     merged = _clean('\n\n'.join(done[sent:]))
-                    print(f'[WX] turns={len(done)}/{len(done)+1} sent={sent} sending={len(done)-sent}', file=sys.__stdout__)
-                    if _send(merged):
-                        sent = len(done)
-        except queue.Empty: result = '[超时]'
+                    if _send(merged): sent = len(done)
+        except queue.Empty:
+            timed_out = True
+            # Save partial state for auto-continue
+            if sent > 0:
+                _clean_rest = _clean('\n\n'.join(done[sent:]))
+                if _clean_rest.strip():
+                    _wx_send(_clean_rest[:2000])
+                _wx_send('⏰ 响应超时，上下文已保留。发送任意消息继续...')
+            else:
+                _wx_send('⏰ 等待超时，请重试')
+            user_states[uid]['task_running'] = False
+            user_states[uid]['timed_out'] = True
+            return
         done, partial = _turn_parts(result)
-        rest = '\n\n'.join(done[sent:] + [partial] + ['\n\n[任务已完成]'])
-        if rest.strip(): _wx_send((_clean(rest))[-2000:])
+        rest = '\n\n'.join([p for p in (done[sent:] + [partial]) if p.strip()])
+        if rest.strip():
+            _wx_send((_clean(rest))[-2000:])
         files = re.findall(r'\[FILE:([^\]]+)\]', result)
         bad = {'filepath', '<filepath>', 'path', '<path>', 'file_path', '<file_path>', '...'}
         files = [f for f in files if f.strip().lower() not in bad and (f if os.path.isabs(f) else os.path.join(_TEMP_DIR, f)) not in media_paths]
@@ -377,8 +470,11 @@ def on_message(bot, msg):
                 sender = bot.send_video if ext in {'.mp4', '.mov', '.m4v', '.webm'} else \
                          bot.send_image if ext in {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'} else bot.send_file
                 sender(uid, fpath, context_token=ctx)
-                print(f'[WX] sent media: {fpath}', file=sys.__stdout__)
             except Exception as e: print(f'[WX] send media err: {e}', file=sys.__stdout__)
+        user_states[uid]['task_running'] = False
+        if timed_out:
+            # Auto-continue on next message
+            user_states[uid]['timed_out'] = True
 
     threading.Thread(target=_handle, daemon=True).start()
 

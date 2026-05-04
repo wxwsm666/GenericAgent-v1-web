@@ -44,7 +44,7 @@ DEPS_FLAG="$VENV_DIR/.deps_installed"
 if [ ! -f "$DEPS_FLAG" ]; then
     echo -e "${YELLOW}📦 安装依赖包...${NC}"
     pip install --upgrade pip -q
-    pip install flask requests 'beautifulsoup4>=4.12' bottle simple-websocket-server -q
+    pip install flask requests 'beautifulsoup4>=4.12' bottle simple-websocket-server pystray Pillow -q
     touch "$DEPS_FLAG"
     echo -e "${GREEN}✅ 依赖安装完成${NC}"
 fi

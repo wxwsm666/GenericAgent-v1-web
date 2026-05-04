@@ -67,6 +67,38 @@ def _to_allowed_set(value):
     return {str(x).strip() for x in value if str(x).strip()}
 
 
+def _download_feishu_media(message):
+    """Download media file from Feishu message. Returns local path or None."""
+    try:
+        msg_type = message.message_type
+        content = json.loads(getattr(message, 'content', '{}') or '{}')
+        media_key = None
+        if msg_type == 'audio':
+            media_key = content.get('file_key')
+        elif msg_type == 'image':
+            media_key = content.get('image_key')
+        if not media_key:
+            return None
+        # Download via Feishu API
+        import requests as req_lark
+        from lark_oapi.api.im.v1 import GetMessageResourceRequest
+        resp = client.im.v1.message_resource.get(GetMessageResourceRequest(
+            message_id=message.message_id,
+            file_key=media_key,
+            type=msg_type))
+        if resp and resp.file:
+            ext = '.wav' if msg_type == 'audio' else '.jpg'
+            fname = f'fs_{message.message_id}_{media_key[:8]}{ext}'
+            fpath = os.path.join(MEDIA_DIR, fname)
+            with open(fpath, 'wb') as f:
+                f.write(resp.file)
+            print(f'[FS] Downloaded media: {fpath}')
+            return fpath
+    except Exception as e:
+        print(f'[FS] Media download failed: {e}')
+    return None
+
+
 def _parse_json(raw):
     if not raw:
         return {}
@@ -237,7 +269,7 @@ AGENT_TIMEOUT_SEC = 900
 
 agent = GeneraticAgent()
 threading.Thread(target=agent.run, daemon=True).start()
-client, user_tasks = None, {}
+client, user_tasks, user_states = None, {}, {}
 
 
 def create_client():
@@ -575,13 +607,29 @@ def _make_task_hook(card, done_event, on_final):
 
 
 def handle_message(data):
+    global user_states
     event, message, sender = data.event, data.event.message, data.event.sender
     open_id = sender.sender_id.open_id
     chat_id = message.chat_id
     if not PUBLIC_ACCESS and open_id not in ALLOWED_USERS:
         print(f"未授权用户: {open_id}")
         return
+    # Per-user state
+    if open_id not in user_states:
+        user_states[open_id] = {'last_active': 0, 'task_running': False}
     user_input, image_paths = _build_user_message(message)
+    # Handle voice messages
+    if message.message_type == "audio" and not user_input:
+        try:
+            media_file = _download_feishu_media(message)
+            if media_file:
+                from voice_asr import transcribe
+                transcribed = transcribe(media_file, language='zh')
+                if transcribed:
+                    user_input = transcribed
+                    print(f"[FS] Voice transcribed: {transcribed[:80]}")
+        except Exception as e:
+            print(f"[FS] Voice transcription failed: {e}")
     if not user_input:
         if chat_id:
             send_message(chat_id, f"⚠️ 暂不支持处理此类飞书消息：{message.message_type}", receive_id_type="chat_id")
@@ -589,11 +637,18 @@ def handle_message(data):
             send_message(open_id, f"⚠️ 暂不支持处理此类飞书消息：{message.message_type}")
         return
     print(f"收到消息 [{open_id}] ({message.message_type}, {len(image_paths)} images): {user_input[:200]}")
+    # Interrupt previous task if user sends new message
+    if user_states[open_id].get('task_running') and time.time() - user_states[open_id].get('last_active', 0) > 1:
+        agent.abort()
+        time.sleep(0.3)
+        user_states[open_id]['task_running'] = False
+    user_states[open_id]['last_active'] = time.time()
     if message.message_type == "text" and user_input.startswith("/"):
         return handle_command(open_id, user_input, chat_id)
 
     def run_agent():
         user_tasks[open_id] = {"running": True}
+        user_states[open_id]['task_running'] = True
         receive_id = chat_id or open_id
         rid_type = "chat_id" if chat_id else "open_id"
         done_event = threading.Event()
@@ -621,6 +676,7 @@ def handle_message(data):
         finally:
             agent._turn_end_hooks.pop(hook_key, None)
             user_tasks.pop(open_id, None)
+            user_states[open_id]['task_running'] = False
 
     threading.Thread(target=run_agent, daemon=True).start()
 
@@ -636,6 +692,8 @@ def handle_command(open_id, cmd, chat_id=None):
     if op == "/stop":
         if open_id in user_tasks:
             user_tasks[open_id]["running"] = False
+        if open_id in user_states:
+            user_states[open_id]['task_running'] = False
         agent.abort()
         _send_cmd_response("正在停止...")
     elif op == "/new":
@@ -680,9 +738,23 @@ def main():
         sys.exit(1)
     client = create_client()
     handler = lark.EventDispatcherHandler.builder("", "").register_p2_im_message_receive_v1(handle_message).build()
-    cli = lark.ws.Client(APP_ID, APP_SECRET, event_handler=handler, log_level=lark.LogLevel.INFO)
     print("=" * 50 + "\n飞书 Agent 已启动（长连接模式）\n" + f"App ID: {APP_ID}\n等待消息...\n" + "=" * 50)
-    cli.start()
+    delay, max_delay, consecutive_ok = 5, 300, 0
+    while True:
+        started_at = time.monotonic()
+        try:
+            cli = lark.ws.Client(APP_ID, APP_SECRET, event_handler=handler, log_level=lark.LogLevel.INFO)
+            cli.start()
+        except Exception as e:
+            print(f"[Feishu] stream error: {e}")
+        if time.monotonic() - started_at >= 60:
+            consecutive_ok += 1
+            delay = 5 if consecutive_ok >= 5 else delay
+        else:
+            consecutive_ok = 0
+        print(f"[Feishu] reconnect in {delay}s...")
+        time.sleep(delay)
+        delay = min(delay * 2, max_delay)
 
 
 if __name__ == "__main__":
