@@ -72,11 +72,6 @@ echo "  打开浏览器访问:  http://localhost:18600"
 echo "  按 Ctrl+C 停止服务"
 echo ""
 
-sleep 1
-if command -v open &>/dev/null; then
-    open http://localhost:18600 2>/dev/null || true
-fi
-
 cd "$SCRIPT_DIR/frontends"
 python3 web_server.py --port 18600
 

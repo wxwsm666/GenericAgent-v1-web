@@ -163,7 +163,6 @@ echo ================================================================
 echo.
 
 cd frontends
-start "" http://localhost:18600
 "..\%VENV_PY%" web_server.py --port 18600
 
 echo.

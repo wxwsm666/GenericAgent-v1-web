@@ -1,5 +1,5 @@
 """GenericAgent Web UI — Full-featured dashboard with 20 sections."""
-import os, sys, json, time, queue, threading, re, glob, platform, socket, subprocess
+import os, sys, json, time, queue, threading, re, glob, platform, socket, subprocess, uuid, copy
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_dir = os.path.dirname(script_dir)
@@ -10,6 +10,7 @@ from flask import Flask, render_template, request, Response, jsonify, send_from_
 from agentmain import GeneraticAgent
 import chatapp_common
 from continue_cmd import list_sessions, extract_ui_messages, reset_conversation, handle_frontend_command
+from llmcore import reload_mykeys, NativeClaudeSession, NativeOAISession, ClaudeSession, LLMSession, BaseSession, trim_messages_history
 
 app = Flask(__name__,
             template_folder=os.path.join(script_dir, 'templates'),
@@ -145,11 +146,18 @@ def _save_custom_models(models):
 def _merge_models():
     ag = get_agent()
     llm_list = ag.list_llms()
+    mk, _ = reload_mykeys()
+    # Build ordered key list matching llmclients iteration order in load_llm_sessions()
+    key_order = []
+    for k, cfg in mk.items():
+        if isinstance(cfg, dict) and any(x in k for x in ['api', 'config', 'cookie', 'mixin']):
+            key_order.append(k)
     builtin = []
     for i, name, active in llm_list:
         b = ag.llmclients[i] if i < len(ag.llmclients) else None
         info = {'index': i, 'name': name, 'active': active, 'source': 'mykey.py',
-                'type': type(b.backend).__name__ if b and hasattr(b, 'backend') else 'unknown'}
+                'type': type(b.backend).__name__ if b and hasattr(b, 'backend') else 'unknown',
+                'key': key_order[i] if i < len(key_order) else ''}
         if b and hasattr(b, 'backend'):
             info['model'] = getattr(b.backend, 'model', '')
             info['api_base'] = getattr(b.backend, 'api_base', '')
@@ -160,6 +168,7 @@ def _merge_models():
         cm['index'] = len(builtin) + i
         cm['source'] = 'custom'
         cm['active'] = False
+        cm['key'] = f"custom:{cm.get('id', '')}"
     return {'builtin': builtin, 'custom': custom, 'all': builtin + custom}
 
 @app.route('/api/models/merged')
@@ -1217,6 +1226,152 @@ def api_image_paste():
 # ──────────── Group Chat Agent Management ────────────
 GC_AGENTS_FILE = os.path.join(project_dir, 'temp', 'groupchat_agents.json')
 
+_gc_session_cache = {}  # cache_key -> BaseSession
+
+
+def _gc_text_ask(session, prompt):
+    """Send a text prompt to any session type and get streaming response chunks."""
+    with session.lock:
+        session.history.append({"role": "user", "content": [{"type": "text", "text": prompt}]})
+        trim_messages_history(session.history, session.context_win)
+        if hasattr(session, 'make_messages'):
+            messages = session.make_messages(list(session.history))
+        else:
+            messages = list(session.history)
+    return session.raw_ask(messages)
+
+def _resolve_model_session(model_key, ag):
+    """Resolve a model_key string to a BaseSession instance for group chat use."""
+    if not model_key:
+        return ag.llmclient.backend
+
+    cache_key = model_key
+    if cache_key in _gc_session_cache:
+        return _gc_session_cache[cache_key]
+
+    sess = None
+    if model_key.startswith('custom:'):
+        custom_id = model_key.split(':', 1)[1]
+        models = _load_custom_models()
+        cm = next((m for m in models if m.get('id') == custom_id), None)
+        if cm:
+            cfg = {'name': cm['provider_name'], 'apikey': cm['api_key'],
+                   'apibase': cm['api_base'], 'model': cm['model_name']}
+            sess = LLMSession(cfg=cfg) if cm.get('type') != 'claude' else ClaudeSession(cfg=cfg)
+    else:
+        mk, _ = reload_mykeys()
+        cfg = mk.get(model_key)
+        if cfg:
+            k = model_key
+            if 'native' in k and 'claude' in k:
+                sess = NativeClaudeSession(cfg=cfg)
+            elif 'native' in k and 'oai' in k:
+                sess = NativeOAISession(cfg=cfg)
+            elif 'mixin' in k:
+                sess = LLMSession(cfg=cfg)  # fallback: use first mixin config directly
+            elif 'claude' in k:
+                sess = ClaudeSession(cfg=cfg)
+            elif 'oai' in k:
+                sess = LLMSession(cfg=cfg)
+            else:
+                sess = LLMSession(cfg=cfg)
+
+    if sess is None:
+        sess = ag.llmclient.backend  # fallback to global
+
+    _gc_session_cache[cache_key] = sess
+    return sess
+
+
+def _run_agent_turn(agent, message, ag, is_coordinator=False, coord_response='',
+                     correction_prompt='', previous_response=''):
+    """Run a single agent turn using its assigned model. Yields SSE event strings."""
+    model_key = agent.get('model_key')
+    session = _resolve_model_session(model_key, ag)
+
+    role_label = '协调者' if is_coordinator or agent.get('role') == 'coordinator' else '专家'
+    prompt = f"[群聊模式] 你是{agent['name']}（{role_label}）。{agent.get('prompt','')}\n\n"
+
+    if correction_prompt:
+        prompt += f"用户问题: {message}\n\n你之前的回答:\n{previous_response}\n\n监督者指出问题:\n{correction_prompt}\n\n请根据反馈修正你的回答。"
+    elif is_coordinator or agent.get('role') == 'coordinator':
+        prompt += f"用户消息: {message}\n\n请简短分析用户意图并分配给对应的专业Agent处理。直接给出分析结论即可。"
+    else:
+        if coord_response:
+            prompt += f"协调者分析: {coord_response}\n\n"
+        prompt += f"用户问题: {message}\n\n请给出专业建议。"
+
+    model_name = model_key or '跟随全局'
+    yield f"data: {json.dumps({'type':'agent_start','agent':agent['name'],'icon':agent.get('icon','🤖'),'color':agent.get('color','#58a6ff'),'model':model_name})}\n\n"
+
+    resp = ''
+    try:
+        gen = _gc_text_ask(session, prompt)
+        for chunk in gen:
+            if isinstance(chunk, str):
+                resp += chunk
+                yield f"data: {json.dumps({'type':'chunk','agent':agent['name'],'icon':agent.get('icon','🤖'),'content':resp})}\n\n"
+    except Exception as e:
+        resp = f'[Error: {str(e) or type(e).__name__}]'
+
+    yield f"data: {json.dumps({'type':'agent_done','agent':agent['name'],'icon':agent.get('icon','🤖'),'content':resp})}\n\n"
+    return resp
+
+
+def _run_supervision_review(supervisor, message, coord_response, specialist_responses, agents, ag):
+    """Supervisor reviews all agent responses. Yields SSE events. Returns dict with verdict/feedback/corrections."""
+    model_key = supervisor.get('model_key')
+    session = _resolve_model_session(model_key, ag)
+
+    # Build review prompt
+    prompt = f"""[群聊监督模式] 你是监督者{supervisor['name']}。请审查以下群聊讨论的质量。
+
+用户原始问题: {message}
+
+协调者分析: {coord_response or '无'}
+
+各专家回答:
+"""
+    for agent_id, resp in specialist_responses.items():
+        a = next((x for x in agents if x.get('id') == agent_id), None)
+        name = a['name'] if a else agent_id
+        prompt += f"\n--- {name} ---\n{resp}\n"
+
+    prompt += """
+请严格审查每个回答，检查: 1.事实错误或幻觉 2.逻辑矛盾 3.遗漏重要信息 4.回答不完整
+
+如果所有回答质量合格，返回: {"verdict":"ok","feedback":"所有回答质量合格。"}
+如果需要修正，返回:
+{"verdict":"needs_correction","feedback":"简短说明发现的问题","corrections":[{"agent_id":"xxx","issue":"问题描述","correction_prompt":"具体的修正建议"}]}
+
+仅返回 JSON，不要有其他内容。"""
+
+    yield f"data: {json.dumps({'type':'supervision_start','agent':supervisor['name'],'icon':supervisor.get('icon','🤖')})}\n\n"
+
+    review_text = ''
+    try:
+        gen = _gc_text_ask(session, prompt)
+        for chunk in gen:
+            if isinstance(chunk, str):
+                review_text += chunk
+                yield f"data: {json.dumps({'type':'supervision_chunk','content':review_text})}\n\n"
+    except Exception as e:
+        return {'verdict': 'ok', 'feedback': f'[Supervision error: {str(e) or type(e).__name__}]', 'corrections': []}
+
+    # Parse JSON result
+    try:
+        result = json.loads(review_text.strip())
+    except Exception:
+        try:
+            s = review_text
+            if '```' in s:
+                s = s.split('```')[1]
+                if s.startswith('json'): s = s[4:]
+            result = json.loads(s.strip())
+        except Exception:
+            result = {'verdict': 'ok', 'feedback': review_text[:200], 'corrections': []}
+    return result
+
 def _load_gc_agents():
     if os.path.isfile(GC_AGENTS_FILE):
         return json.load(open(GC_AGENTS_FILE, encoding='utf-8'))
@@ -1232,10 +1387,13 @@ def api_gc_agents():
     if not agents:
         agents = [
             {'id': 'coordinator', 'name': '协调者', 'role': 'coordinator', 'icon': '🎯', 'color': '#58a6ff',
+             'model_key': None, 'supervisor': False,
              'prompt': '你是群聊协调者，分析用户意图并分配给最合适的专业Agent处理。'},
             {'id': 'researcher', 'name': '研究员', 'role': 'specialist', 'icon': '🔍', 'color': '#3fb950',
+             'model_key': None, 'supervisor': False,
              'prompt': '你是信息检索专家，擅长搜索、分析和总结信息。'},
             {'id': 'coder', 'name': '程序员', 'role': 'specialist', 'icon': '💻', 'color': '#d29922',
+             'model_key': None, 'supervisor': False,
              'prompt': '你是编程专家，擅长代码编写、调试和技术方案。'}
         ]
         _save_gc_agents(agents)
@@ -1249,48 +1407,92 @@ def api_gc_agents_save():
 
 @app.route('/api/groupchat/send', methods=['POST'])
 def api_gc_send():
-    """Send message to group chat - returns SSE stream with agent responses."""
+    """Group chat with per-agent model selection and optional mutual supervision."""
     data = request.json or {}
     message = data.get('message', '')
     agents = data.get('agents', _load_gc_agents())
+    supervision = data.get('supervision', {})
+    supervision_enabled = supervision.get('enabled', False)
+    max_rounds = min(supervision.get('max_rounds', 2), 5)
     ag = get_agent()
+
+    # Clear session cache for fresh contexts each group chat round
+    _gc_session_cache.clear()
+
     def generate():
         yield f"data: {json.dumps({'type':'info','content':f'👥 群聊已收到消息，{len(agents)}个Agent参与讨论...'})}\n\n"
-        # 1. Coordinator analyzes intent
-        coordinator = next((a for a in agents if a.get('role')=='coordinator'), agents[0] if agents else None)
+
+        # ── Step 1: Coordinator ──
+        coordinator = next((a for a in agents if a.get('role') == 'coordinator'), None)
+        coord_id = None
+        coord_response = ''
         if coordinator:
-            yield f"data: {json.dumps({'type':'agent_start','agent':coordinator['name'],'icon':coordinator.get('icon','🤖'),'color':coordinator.get('color','#58a6ff')})}\n\n"
-            coord_prompt = f"[群聊模式] 你是{coordinator['name']}。{coordinator.get('prompt','')}\n\n用户消息: {message}\n\n请简短分析并分配给对应Agent。"
-            display_queue = ag.put_task(coord_prompt, source="groupchat")
-            resp = ''
-            try:
-                while True:
-                    try: item = display_queue.get(timeout=30)
-                    except queue.Empty: break
-                    if 'next' in item: resp = item['next']; yield f"data: {json.dumps({'type':'chunk','agent':coordinator['name'],'icon':coordinator.get('icon','🤖'),'content':resp})}\n\n"
-                    if 'done' in item:
-                        resp = item.get('done', resp); break
-            except GeneratorExit: pass
-            yield f"data: {json.dumps({'type':'agent_done','agent':coordinator['name'],'icon':coordinator.get('icon','🤖'),'content':resp})}\n\n"
-        # 2. Specialist agents respond
-        specialists = [a for a in agents if a.get('role')=='specialist']
+            coord_id = coordinator['id']
+            coord_response = yield from _run_agent_turn(coordinator, message, ag, is_coordinator=True)
+
+        # ── Step 2: Specialists ──
+        specialist_responses = {}  # agent_id -> response_text
+        specialists = [a for a in agents if a.get('role') != 'coordinator']
         for agent in specialists:
-            yield f"data: {json.dumps({'type':'agent_start','agent':agent['name'],'icon':agent.get('icon','🤖'),'color':agent.get('color','#3fb950')})}\n\n"
-            spec_prompt = f"[群聊模式] 你是{agent['name']}。{agent.get('prompt','')}\n\n用户问题: {message}\n\n请给出专业建议。"
-            display_queue = ag.put_task(spec_prompt, source="groupchat")
-            resp = ''
-            try:
-                while True:
-                    try: item = display_queue.get(timeout=30)
-                    except queue.Empty: break
-                    if 'next' in item: resp = item['next']; yield f"data: {json.dumps({'type':'chunk','agent':agent['name'],'icon':agent.get('icon','🤖'),'content':resp})}\n\n"
-                    if 'done' in item:
-                        resp = item.get('done', resp); break
-            except GeneratorExit: pass
-            yield f"data: {json.dumps({'type':'agent_done','agent':agent['name'],'icon':agent.get('icon','🤖'),'content':resp})}\n\n"
+            resp = yield from _run_agent_turn(agent, message, ag, coord_response=coord_response)
+            specialist_responses[agent['id']] = resp
+
+        # ── Step 3: Supervision loop ──
+        if supervision_enabled:
+            supervisor = next((a for a in agents if a.get('supervisor')), None)
+            if not supervisor:
+                supervisor = coordinator or (agents[0] if agents else None)
+
+            if supervisor and specialist_responses:
+                for rnd in range(max_rounds):
+                    yield f"data: {json.dumps({'type':'supervision_round','round':rnd+1,'max':max_rounds})}\n\n"
+
+                    review = yield from _run_supervision_review(
+                        supervisor, message, coord_response, specialist_responses, agents, ag)
+
+                    yield f"data: {json.dumps({'type':'supervision_feedback','content':review.get('feedback',''),'verdict':review.get('verdict','ok')})}\n\n"
+
+                    if review.get('verdict') != 'needs_correction':
+                        break
+
+                    corrections = review.get('corrections', [])
+                    for corr in corrections:
+                        agent_id = corr.get('agent_id', '')
+                        target = next((a for a in agents if a['id'] == agent_id), None)
+                        if not target: continue
+                        yield f"data: {json.dumps({'type':'correction_start','agent':target['name'],'icon':target.get('icon','🤖'),'issue':corr.get('issue','')})}\n\n"
+                        prev = specialist_responses.get(agent_id, '')
+                        corrected = yield from _run_agent_turn(
+                            target, message, ag,
+                            correction_prompt=corr.get('correction_prompt', ''),
+                            previous_response=prev)
+                        specialist_responses[agent_id] = corrected
+
         yield f"data: {json.dumps({'type':'done','content':'✅ 群聊讨论完成'})}\n\n"
+
     return Response(generate(), mimetype='text/event-stream',
                     headers={'Cache-Control':'no-cache','X-Accel-Buffering':'no'})
+
+@app.route('/api/groupchat/models')
+def api_gc_models():
+    """Return available models for group chat agent assignment."""
+    merged = _merge_models()
+    models = []
+    for m in merged.get('all', []):
+        key = m.get('key') or ''
+        if not key:
+            if m.get('source') == 'custom':
+                key = f"custom:{m.get('id','')}"
+            else:
+                key = str(m.get('index', 0))
+        models.append({
+            'key': key,
+            'name': m.get('name', ''),
+            'model': m.get('model', ''),
+            'api_base': m.get('api_base', ''),
+            'source': m.get('source', ''),
+        })
+    return jsonify({'models': models})
 
 # ──────────── Enhanced Chat with session support ────────────
 @app.route('/api/chat/stream', methods=['POST'])

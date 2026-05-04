@@ -1130,7 +1130,7 @@ async function viewSessionDetail(p){
 }
 
 // ═══════════════ ENHANCED GROUP CHAT ═══════════════
-let gcAgents=[],gcMsgs=[],gcStreaming=false;
+let gcAgents=[],gcMsgs=[],gcStreaming=false,gcSupervision=false;
 async function renderGroupchat(){
   C.style.padding='20px 24px';C.style.display='block';
   try{const d=await api('/groupchat/agents');gcAgents=d.agents||[]}catch(e){gcAgents=[]}
@@ -1138,10 +1138,12 @@ async function renderGroupchat(){
     <div class="row"><button class="btn acc sm" onclick="addGCAgent()">➕ 添加Agent</button></div></div>`;
   h+=`<div class="agent-cards">`;
   gcAgents.forEach(a=>{
+    const modelLabel = a.model_key ? esc(a.model_key) : '跟随全局';
+    const supBadge = a.supervisor ? ' 👁️监督者' : '';
     h+=`<div class="agent-card">
       <div class="agent-header">
         <div class="agent-avatar" style="background:${a.color||'#58a6ff'}">${a.icon||'🤖'}</div>
-        <div><div class="agent-name">${esc(a.name)}</div><div class="agent-role">${a.role==='coordinator'?'🎯 协调者':'🔧 专家'}</div></div>
+        <div><div class="agent-name">${esc(a.name)}${supBadge}</div><div class="agent-role">${a.role==='coordinator'?'🎯 协调者':'🔧 专家'} · <span style="font-size:10px;color:var(--text3)">${modelLabel}</span></div></div>
         <div style="margin-left:auto;display:flex;gap:4px">
           <button class="btn sm ghost" onclick="editGCAgent('${a.id}')">✏️</button>
           <button class="btn sm red" onclick="deleteGCAgent('${a.id}')">🗑</button>
@@ -1151,7 +1153,15 @@ async function renderGroupchat(){
     </div>`;
   });
   h+=`</div>`;
+  const supChecked = gcSupervision ? ' checked' : '';
   h+=`<div class="card mt"><h3>💬 群聊消息</h3>
+    <div class="flex-between mb" style="align-items:center">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="gcsupervise"${supChecked} onchange="gcSupervision=this.checked">
+        👁️ 互相监督（监督者审查所有回答并修正错误）
+      </label>
+      <span style="font-size:12px;color:var(--text3)">最大轮次: <input id="gcsuprounds" type="number" value="2" min="1" max="5" style="width:36px;text-align:center;background:var(--input-bg);border:1px solid var(--glass-border);border-radius:4px;color:var(--text);padding:2px 4px"></span>
+    </div>
     <div class="row mb"><textarea id="gcinput" placeholder="发送消息给群聊中的所有Agent..." rows="2" style="flex:1"></textarea>
     <button class="btn acc" id="gcsend" onclick="sendGC()" style="align-self:flex-end">▶ 发送</button></div>
     <div class="gc-output" id="gcout">${gcMsgs.length?'':'<div class="empty"><div class="icon">👥</div><p>发送消息开始群聊讨论</p></div>'}</div>
@@ -1173,8 +1183,9 @@ async function sendGC(){
   const inp=document.getElementById('gcinput');const msg=inp.value.trim();if(!msg||gcStreaming)return;
   inp.value='';gcStreaming=true;document.getElementById('gcsend').disabled=true;
   const el=document.getElementById('gcout');if(el&&el.querySelector('.empty'))el.innerHTML='';
+  const supervision = gcSupervision ? {enabled:true,max_rounds:parseInt(document.getElementById('gcsuprounds')?.value||2)} : {enabled:false};
   try{
-    const res=await fetch('/api/groupchat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,agents:gcAgents})});
+    const res=await fetch('/api/groupchat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,agents:gcAgents,supervision})});
     const reader=res.body.getReader();const dec=new TextDecoder();let buf='',currentEl=null;
     while(true){
       const{done,value}=await reader.read();if(done)break;
@@ -1184,7 +1195,8 @@ async function sendGC(){
         try{const d=JSON.parse(line.slice(6));
           if(d.type==='agent_start'){
             currentEl=document.createElement('div');currentEl.className='gc-msg';
-            currentEl.innerHTML=`<div class="gc-agent"><div class="gc-avatar" style="background:${d.color||'#58a6ff'}">${d.icon||'🤖'}</div><strong>${esc(d.agent)}</strong><span style="font-size:10px;color:var(--text3);margin-left:4px">输入中...</span></div><div class="gc-content" style="font-size:13px;line-height:1.55;white-space:pre-wrap"></div>`;
+            const mdl=d.model?`<span style="font-size:10px;color:var(--text3);margin-left:4px">${esc(d.model)}</span>`:'';
+            currentEl.innerHTML=`<div class="gc-agent"><div class="gc-avatar" style="background:${d.color||'#58a6ff'}">${d.icon||'🤖'}</div><strong>${esc(d.agent)}</strong>${mdl}<span style="font-size:10px;color:var(--text3);margin-left:4px">输入中...</span></div><div class="gc-content" style="font-size:13px;line-height:1.55;white-space:pre-wrap"></div>`;
             el.appendChild(currentEl);
           }
           else if(d.type==='chunk'&&currentEl){
@@ -1204,6 +1216,32 @@ async function sendGC(){
             infoEl.innerHTML=`<div style="font-size:12px;color:var(--text2)">${esc(d.content)}</div>`;
             el.appendChild(infoEl);
           }
+          else if(d.type==='supervision_round'){
+            const rEl=document.createElement('div');rEl.className='gc-msg';
+            rEl.innerHTML=`<div style="font-size:12px;color:var(--text3);text-align:center;padding:4px;border-top:1px solid var(--glass-border);border-bottom:1px solid var(--glass-border)">🔍 监督审查 第${d.round}/${d.max}轮</div>`;
+            el.appendChild(rEl);el.scrollTop=el.scrollHeight;
+          }
+          else if(d.type==='supervision_start'){
+            currentEl=document.createElement('div');currentEl.className='gc-msg';
+            currentEl.innerHTML=`<div class="gc-agent"><div class="gc-avatar" style="background:#d29922">👁️</div><strong>${esc(d.agent)}</strong><span style="font-size:10px;color:var(--text3);margin-left:4px">审查中...</span></div><div class="gc-content" style="font-size:13px;line-height:1.55;white-space:pre-wrap"></div>`;
+            el.appendChild(currentEl);
+          }
+          else if(d.type==='supervision_chunk'&&currentEl){
+            const cd=currentEl.querySelector('.gc-content');if(cd)cd.innerHTML=fmtContent(d.content||'');
+            el.scrollTop=el.scrollHeight;
+          }
+          else if(d.type==='supervision_feedback'){
+            if(currentEl){const st=currentEl.querySelector('.gc-agent span');if(st)st.remove();currentEl=null}
+            const fbEl=document.createElement('div');fbEl.className='gc-msg';
+            const isOk=d.verdict==='ok';
+            fbEl.innerHTML=`<div style="font-size:12px;padding:8px;border-left:3px solid ${isOk?'var(--green)':'var(--orange)'};background:var(--glass-bg-light);border-radius:4px"><strong>${isOk?'✅ 审查通过':'⚠️ 需要修正'}</strong><div style="margin-top:4px;white-space:pre-wrap">${fmtContent(d.content||'')}</div></div>`;
+            el.appendChild(fbEl);el.scrollTop=el.scrollHeight;
+          }
+          else if(d.type==='correction_start'){
+            const crEl=document.createElement('div');crEl.className='gc-msg';
+            crEl.innerHTML=`<div style="font-size:12px;color:var(--orange);text-align:center;padding:4px">🔄 ${esc(d.agent)} 正在根据反馈修正: ${esc(d.issue||'')}</div>`;
+            el.appendChild(crEl);el.scrollTop=el.scrollHeight;
+          }
           else if(d.type==='done'){currentEl=null}
         }catch(e){}
       }
@@ -1218,11 +1256,15 @@ async function sendGC(){
 
 async function addGCAgent(){
   const id='agent_'+Date.now();
+  let modelOpts = '<option value="">跟随全局设置</option>';
+  try{const mr=await api('/groupchat/models');(mr.models||[]).forEach(m=>{modelOpts+=`<option value="${esc(m.key)}">${esc(m.name)} (${esc(m.model)})</option>`})}catch(e){}
   showModal('添加Agent',`
     <div class="mb"><div class="inline-label" style="font-size:12px;color:var(--text3);margin-bottom:4px">名称</div><input id="ganame" value="新Agent" style="margin-bottom:8px"></div>
     <div class="mb"><div class="inline-label" style="font-size:12px;color:var(--text3);margin-bottom:4px">角色</div><select id="garole" style="margin-bottom:8px"><option value="specialist">专家 (Specialist)</option><option value="coordinator">协调者 (Coordinator)</option></select></div>
     <div class="mb"><div class="inline-label" style="font-size:12px;color:var(--text3);margin-bottom:4px">图标</div><input id="gaicon" value="🤖" style="margin-bottom:8px;width:80px"></div>
     <div class="mb"><div class="inline-label" style="font-size:12px;color:var(--text3);margin-bottom:4px">颜色</div><input id="gacolor" type="color" value="#58a6ff" style="margin-bottom:8px;width:80px;height:32px;padding:2px"></div>
+    <div class="mb"><div class="inline-label" style="font-size:12px;color:var(--text3);margin-bottom:4px">模型</div><select id="gamodel" style="margin-bottom:8px">${modelOpts}</select></div>
+    <div class="mb"><label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gasupervisor"> 👁️ 监督者（审查其他Agent回答）</label></div>
     <div><div class="inline-label" style="font-size:12px;color:var(--text3);margin-bottom:4px">系统提示词</div><textarea id="gaprompt" rows="3" placeholder="描述Agent的专业领域和行为..."></textarea></div>
   `,async()=>{
     const a={
@@ -1230,6 +1272,8 @@ async function addGCAgent(){
       role:document.getElementById('garole').value,
       icon:document.getElementById('gaicon').value||'🤖',
       color:document.getElementById('gacolor').value,
+      model_key:document.getElementById('gamodel').value||null,
+      supervisor:document.getElementById('gasupervisor')?.checked||false,
       prompt:document.getElementById('gaprompt').value.trim()
     };
     gcAgents.push(a);await apiPost('/groupchat/agents/save',{agents:gcAgents});
@@ -1238,15 +1282,22 @@ async function addGCAgent(){
 }
 async function editGCAgent(id){
   const a=gcAgents.find(x=>x.id===id);if(!a)return;
+  let modelOpts = '<option value="">跟随全局设置</option>';
+  try{const mr=await api('/groupchat/models');(mr.models||[]).forEach(m=>{const sel=m.key===a.model_key?' selected':'';modelOpts+=`<option value="${esc(m.key)}"${sel}>${esc(m.name)} (${esc(m.model)})</option>`})}catch(e){}
+  const supChk=a.supervisor?' checked':'';
   showModal('编辑: '+esc(a.name),`
     <div class="mb"><div class="inline-label" style="font-size:12px;color:var(--text3);margin-bottom:4px">名称</div><input id="ganame" value="${esc(a.name)}" style="margin-bottom:8px"></div>
     <div class="mb"><div class="inline-label" style="font-size:12px;color:var(--text3);margin-bottom:4px">图标</div><input id="gaicon" value="${esc(a.icon||'🤖')}" style="margin-bottom:8px;width:80px"></div>
     <div class="mb"><div class="inline-label" style="font-size:12px;color:var(--text3);margin-bottom:4px">颜色</div><input id="gacolor" type="color" value="${a.color||'#58a6ff'}" style="margin-bottom:8px;width:80px;height:32px;padding:2px"></div>
+    <div class="mb"><div class="inline-label" style="font-size:12px;color:var(--text3);margin-bottom:4px">模型</div><select id="gamodel" style="margin-bottom:8px">${modelOpts}</select></div>
+    <div class="mb"><label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="gasupervisor"${supChk}> 👁️ 监督者（审查其他Agent回答）</label></div>
     <div><div class="inline-label" style="font-size:12px;color:var(--text3);margin-bottom:4px">提示词</div><textarea id="gaprompt" rows="4">${esc(a.prompt||'')}</textarea></div>
   `,async()=>{
     a.name=document.getElementById('ganame').value.trim()||a.name;
     a.icon=document.getElementById('gaicon').value||a.icon;
     a.color=document.getElementById('gacolor').value;
+    a.model_key=document.getElementById('gamodel').value||null;
+    a.supervisor=document.getElementById('gasupervisor')?.checked||false;
     a.prompt=document.getElementById('gaprompt').value.trim();
     await apiPost('/groupchat/agents/save',{agents:gcAgents});
     toast('Agent已更新','ok');renderGroupchat();
