@@ -32,7 +32,7 @@ def get_agent():
     return agent
 
 # ──────────── Response cleaning ────────────
-_TAG_PATS = [r'<' + t + r'>.*?</' + t + r'>' for t in ('thinking', 'file_content', 'tool_use')]
+_TAG_PATS = [r'<' + t + r'>.*?</' + t + r'>' for t in ('thinking', 'file_content', 'tool_use', 'summary')]
 
 def _clean_response(text):
     """Strip technical XML tags and code blocks from agent responses."""
@@ -69,6 +69,8 @@ def api_chat():
     if prompt.startswith('/'):
         result = _handle_command(ag, prompt)
         return jsonify({'type': 'command', 'content': result})
+    if not prompt.startswith('/'):
+        prompt = f"直接回答，禁止复述问题。\n\n{prompt}"
     display_queue = ag.put_task(prompt, source="user")
     def generate():
         response = ''
@@ -1723,6 +1725,9 @@ def api_chat_stream():
     if prompt.startswith('/'):
         result = _handle_command(ag, prompt)
         return jsonify({'type': 'command', 'content': result})
+    # Inject reply style constraint
+    if not prompt.startswith('/'):
+        prompt = f"直接回答，禁止复述问题。\n\n{prompt}"
     # Inject file context if present
     if file_paths:
         file_hint = '\n'.join(f'[FILE:{p}]' for p in file_paths)

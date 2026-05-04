@@ -1258,7 +1258,7 @@ function renderChatView(){
     <div class="session-tabs" id="sessionTabs"></div>
     <div class="chat-layout-bar">
       ${pickerOpts}
-      <span style="margin-left:8px"><button class="btn sm ghost" onclick="document.getElementById('fileInput').click()" title="上传文件">📎</button></span>
+      <span style="margin-left:8px;display:flex;align-items:center;gap:4px"><button class="btn sm ghost" onclick="document.getElementById('fileInput').click()" title="上传文件">📎 文件</button><button class="btn sm ghost" onclick="pasteScreenshot()" title="粘贴截图 (或 Ctrl+V)">📷 截图</button></span>
       <input type="file" id="fileInput" style="display:none" multiple onchange="handleFileSelect(event)">
     </div>
     <div class="chat-grid chat-grid-${_paneLayout}" id="chatArea">
@@ -1266,6 +1266,36 @@ function renderChatView(){
     </div>
     <div class="drag-overlay" id="chatDragOverlay">📁 释放文件以上传</div>`;
   updateSessionTabs();
+  // Setup toolbar: all tools left-aligned below input
+  for(let i=0;i<n;i++){
+    const ci = document.getElementById('chatInput'+i);
+    if(!ci) continue;
+    // Remove existing toolbar, rebuild
+    const oldTb = ci.querySelector('.chat-toolbar');
+    if(oldTb) oldTb.remove();
+    const tb = document.createElement('div');
+    tb.className = 'chat-toolbar';
+    tb.style.justifyContent = 'flex-start';
+    tb.innerHTML = `<div class="left" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--text3)">${esc((sessions.find(s=>s.id===activeSid)?.name||'').substring(0,15))}</span>
+      <button class="btn sm ghost" onclick="document.getElementById('fileInput').click()" title="上传文件">📎</button>
+      <button class="btn sm ghost" onclick="pasteScreenshot()" title="粘贴截图(Ctrl+V)">📷</button>
+      <button class="btn sm ghost" onclick="downloadCurrentChat('msgs${i}')" title="导出">💾</button>
+      <button class="btn sm ghost" onclick="clearCurrentChat('msgs${i}')" title="清空">🗑</button>
+    </div>`;
+    ci.appendChild(tb);
+    // File chips only in pane 0
+    if(i===0){
+      let fc = document.getElementById('fileChips');
+      if(!fc){fc=document.createElement('div');fc.id='fileChips';fc.className='file-chips';}
+      ci.insertBefore(fc, tb);
+    }
+  }
+  // Hide original upload span in layout bar
+  const layoutBar = document.querySelector('.chat-layout-bar');
+  const uploadSpan = layoutBar ? layoutBar.querySelector('span') : null;
+  if(uploadSpan && uploadSpan.style) uploadSpan.style.display = 'none';
+  renderFileChips();
   // Render messages for each pane
   for(let i=0;i<n;i++){
     const elId = 'msgs'+(i||'0');
@@ -1344,6 +1374,10 @@ function renderFileChips(){
   </div>`).join('');
 }
 function removeFile(i){uploadedFiles.splice(i,1);renderFileChips()}
+
+function pasteScreenshot(){
+  toast('请使用 Ctrl+V / Cmd+V 粘贴截图','info');
+}
 
 // Screenshot paste
 document.addEventListener('paste',async e=>{
