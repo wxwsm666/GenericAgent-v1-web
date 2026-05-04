@@ -14,7 +14,7 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC
 
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║   GenericAgent Web UI v0.6.0                             ║"
+echo "║   GenericAgent Web UI v0.8.1                             ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -44,7 +44,7 @@ DEPS_FLAG="$VENV_DIR/.deps_installed"
 if [ ! -f "$DEPS_FLAG" ]; then
     echo -e "${YELLOW}📦 安装依赖包...${NC}"
     pip install --upgrade pip -q
-    pip install flask requests 'beautifulsoup4>=4.12' bottle simple-websocket-server pystray Pillow -q
+    pip install flask requests 'beautifulsoup4>=4.12' bottle simple-websocket-server rumps Pillow lark-oapi dingtalk-stream -q
     touch "$DEPS_FLAG"
     echo -e "${GREEN}✅ 依赖安装完成${NC}"
 fi

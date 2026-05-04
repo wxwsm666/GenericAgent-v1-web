@@ -4,12 +4,12 @@
 ::  Double-click start.bat to run.
 :: ============================================================
 
-title GenericAgent v0.6.0
+title GenericAgent v0.8.1
 cd /d "%~dp0"
 
 echo.
 echo ================================================================
-echo    GenericAgent Web UI  v0.6.0
+echo    GenericAgent Web UI  v0.8.1
 echo ================================================================
 echo.
 
@@ -112,7 +112,7 @@ set "VENV_PIP=.venv\Scripts\pip.exe"
 if exist ".venv\.deps_installed" goto :deps_ok
 echo [SETUP] Installing dependencies (needs internet, ~1 min)...
 "%VENV_PIP%" install --upgrade pip --quiet
-"%VENV_PIP%" install flask requests beautifulsoup4 bottle simple-websocket-server pystray Pillow --quiet
+"%VENV_PIP%" install flask requests beautifulsoup4 bottle simple-websocket-server pystray Pillow lark-oapi dingtalk-stream --quiet
 if not errorlevel 1 goto :deps_done
 echo.
 echo [ERROR] Failed to install dependencies.
