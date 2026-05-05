@@ -991,9 +991,14 @@ def _get_update_source():
     """Read update_source from mykey.py if configured."""
     try:
         import mykey
-        return getattr(mykey, 'update_source', None), getattr(mykey, 'update_channel', 'stable')
+        url = getattr(mykey, 'update_source', None)
+        channel = getattr(mykey, 'update_channel', 'stable')
+        # Fallback to default update source
+        if not url:
+            url = 'https://raw.githubusercontent.com/wxwsm666/GenericAgent-v1-web/main/version.json'
+        return url, channel
     except Exception:
-        return None, 'stable'
+        return 'https://raw.githubusercontent.com/wxwsm666/GenericAgent-v1-web/main/version.json', 'stable'
 
 @app.route('/api/update/check')
 def api_update_check():
