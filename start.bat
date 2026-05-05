@@ -165,15 +165,17 @@ echo ================================================================
 echo   Starting Web UI...
 echo.
 echo   Browser will open:  http://localhost:%PORT%
+echo   Tip: Close browser? Click tray icon to reopen.
 echo   Press Ctrl+C or close this window to stop.
 echo ================================================================
 echo.
 
-:: Open browser
-start "" http://localhost:%PORT% 2>nul
-
 cd frontends
-"..\%VENV_PY%" web_server.py --port %PORT%
+:: Try tray_app first (stays in system tray for easy re-access)
+"..\%VENV_PY%" ..\tray_app.py --port %PORT% 2>nul || (
+  :: Fallback: run web server directly
+  "..\%VENV_PY%" web_server.py --port %PORT%
+)
 
 echo.
 echo Server stopped. Press any key to exit.

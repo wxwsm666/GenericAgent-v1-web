@@ -88,15 +88,17 @@ fi
 echo -e "${GREEN}🚀 启动 Web UI...${NC}"
 echo ""
 echo "  浏览器将自动打开:  http://localhost:$PORT"
+echo "  💡 关闭浏览器后，点击菜单栏 🧠 图标 → 「打开 Web UI」即可重新打开"
 echo "  按 Ctrl+C 停止服务"
 echo ""
 
-# Auto-open browser
-sleep 1
-open "http://localhost:$PORT" 2>/dev/null || true
-
 cd "$SCRIPT_DIR/frontends"
-python3 web_server.py --port $PORT
+# Try tray_app first (stays in menu bar for easy re-access)
+python3 "$SCRIPT_DIR/tray_app.py" --port $PORT 2>/dev/null || {
+  # Fallback: run web server directly
+  echo -e "${YELLOW}⚠️  托盘启动失败，使用直接模式${NC}"
+  python3 web_server.py --port $PORT
+}
 
 # 保持终端打开
 echo ""
