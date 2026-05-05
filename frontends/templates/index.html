@@ -477,7 +477,7 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
 /* File chips */
 .file-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .file-chip{
-  display:flex;align-items:center;gap:6px;padding:6px 12px;
+  display:flex;align-items:center;gap:6px;padding:6px 12px;position:relative;
   border-radius:10px;font-size:11px;
   background:var(--glass-bg-strong);border:1px solid var(--glass-border);
   backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
@@ -485,6 +485,17 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
 .file-chip img{width:28px;height:28px;border-radius:6px;object-fit:cover}
 .file-chip .remove{cursor:pointer;opacity:.5;font-size:15px;transition:all var(--transition)}
 .file-chip .remove:hover{opacity:1;color:var(--red)}
+.file-chip .ocr-btn{cursor:pointer;opacity:.5;font-size:13px;transition:all var(--transition);margin-left:auto}
+.file-chip .ocr-btn:hover{opacity:1;color:var(--accent)}
+.ocr-result{position:absolute;top:100%;left:0;right:0;z-index:20;margin-top:4px;
+  background:var(--glass-bg-strong);border:1px solid var(--glass-border);border-radius:10px;
+  padding:10px;font-size:12px;max-height:200px;overflow-y:auto;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:0 8px 32px rgba(0,0,0,.3)}
+.ocr-text{white-space:pre-wrap;line-height:1.5;margin-bottom:8px;color:var(--text1)}
+.ocr-actions{display:flex;gap:6px}
+.ocr-actions button{padding:3px 10px;border-radius:6px;font-size:11px;border:1px solid var(--glass-border);
+  background:var(--glass-bg);color:var(--text2);cursor:pointer;transition:all var(--transition)}
+.ocr-actions button:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 
 /* Drag overlay */
 .drag-overlay{
@@ -530,6 +541,11 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
 .gc-msg{margin-bottom:14px;padding:14px 18px;border-radius:var(--r);border:1px solid var(--glass-border);background:var(--glass-bg-light);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 .gc-msg .gc-agent{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px}
 .gc-msg .gc-avatar{width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff}
+.gc-files{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid var(--glass-border)}
+.gc-file-img{cursor:pointer;border-radius:8px;overflow:hidden;max-width:180px;border:1px solid var(--glass-border)}
+.gc-file-img img{width:100%;max-height:120px;object-fit:cover;display:block}
+.gc-file-img span{display:block;font-size:10px;color:var(--text3);padding:3px 6px;background:var(--glass-bg);text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+.gc-file-chip{display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;background:var(--glass-bg);border:1px solid var(--glass-border);font-size:11px}
 
 /* ═══════════════ RIGHT HISTORY PANEL ═══════════════ */
 .rp{
@@ -974,6 +990,7 @@ const NAV = [
   {id:'history',  icon:'📜',label:'历史'},
   {id:'groupchat',icon:'👥',label:'群聊',badge:'new'},
   {id:'moments',  icon:'📱',label:'友圈',badge:'new'},
+  {id:'reflect',  icon:'🪞',label:'反思'},
   {id:'agent',    icon:'🤖',label:'代理',devOnly:true},
   {id:'models',   icon:'⚡',label:'模型',devOnly:true},
   {id:'channels', icon:'📡',label:'频道',devOnly:true},
@@ -997,6 +1014,17 @@ const NAV = [
   {id:'search',   icon:'🔍',label:'搜索',devOnly:true},
 ];
 let cur='dashboard';
+let _updateInfo = null;  // {has_update, current, latest, changelog} | null
+
+async function checkUpdateSilent(){
+  try{const d=await api('/update/check');_updateInfo=d.ok?d:null}
+  catch(e){_updateInfo=null}
+  if(_updateInfo&&_updateInfo.has_update){
+    // Update nav badge
+    const navItems=document.querySelectorAll('.sb-item');
+    navItems.forEach(el=>{if(el.dataset.id==='settings'){el.querySelector('.badge')?.remove();el.innerHTML+=`<span class="badge" style="background:var(--red)">new</span>`}});
+  }
+}
 function buildNav(){
   const n=document.getElementById('nav');
   n.innerHTML='';
@@ -1156,6 +1184,11 @@ async function renderDashboard(){
       </div>
       <p style="color:var(--text3);font-size:11px;margin-top:10px">备份包含所有会话记录、群聊Agent配置和应用设置。导入将恢复所有数据。</p>
     </div>
+    <div class="card" id="updateBanner" style="display:none;border-color:var(--orange);background:var(--glass-bg-strong)">
+      <h3>🔄 有新版本可用!</h3>
+      <p style="margin:6px 0" id="updateBannerText"></p>
+      <button class="btn acc" onclick="goPage('settings')">⚙️ 前往更新</button>
+    </div>
     <div class="card"><h3>📋 命令速查</h3>
       <table><tr><td><code>/new</code></td><td>新对话</td><td><code>/llm [n]</code></td><td>切换模型</td></tr>
       <tr><td><code>/continue</code></td><td>恢复会话</td><td><code>/stop</code></td><td>停止任务</td></tr>
@@ -1163,6 +1196,13 @@ async function renderDashboard(){
     </div>
   </div>`;
   C.innerHTML=html;
+  // Auto-check for updates in background
+  checkUpdateSilent().then(()=>{
+    if(_updateInfo&&_updateInfo.has_update){
+      const banner=document.getElementById('updateBanner');
+      if(banner){banner.style.display='';document.getElementById('updateBannerText').textContent=`当前 v${esc(_updateInfo.current)} → 最新 v${esc(_updateInfo.latest)}。${esc(_updateInfo.changelog||'')}`}
+    }
+  });
 }
 
 // ═══════════════ MULTI-SESSION CHAT ═══════════════
@@ -1218,11 +1258,46 @@ async function switchSession(sid){
   _curRoundEl=null;
   if(_paneLayout!=='single') renderChatView(); else {renderChatMessages();refreshPaneHeaders();}
   updateSessionTabs();
+  // Flash the pane that shows this session
+  setTimeout(()=>flashPaneForSession(sid),200);
 }
 async function renameSession(sid){
-  const s = sessions.find(x=>x.id===sid); if(!s)return;
-  const name = prompt('重命名会话:', s.name);
-  if(name&&name.trim()){await apiPost(`/sessions/${encodeURIComponent(sid)}/rename`,{name:name.trim()});s.name=name.trim();updateSessionTabs();refreshPaneHeaders()}
+  const s = sessions.find(x=>x.id===sid);
+  if(!s){toast('未找到该会话','err');return}
+  // Use inline editing instead of prompt() for reliability
+  const pane = findPaneForSid(sid);
+  const nameEl = pane ? pane.querySelector('.pane-name') : null;
+  if(nameEl){
+    const oldName = s.name||'';
+    const input = document.createElement('input');
+    input.type='text';input.value=oldName;
+    input.style.cssText='font-size:13px;font-weight:600;color:var(--text);background:var(--glass-bg);border:1px solid var(--accent);border-radius:8px;padding:4px 8px;width:100%;min-width:120px;outline:none';
+    nameEl.replaceWith(input);
+    input.focus();input.select();
+    const save = async ()=>{
+      const trimmed = input.value.trim();
+      if(trimmed && trimmed!==oldName){
+        try{
+          const d=await apiPost('/sessions/'+encodeURIComponent(sid)+'/rename',{name:trimmed});
+          if(d.ok){s.name=trimmed;updateSessionTabs();refreshPaneHeaders();toast('已重命名: '+trimmed,'ok')}
+          else{toast('失败: '+(d.error||'未知'),'err')}
+        }catch(e){toast('失败: '+e.message,'err');refreshPaneHeaders()}
+      }else{refreshPaneHeaders()}
+    };
+    input.addEventListener('blur',save);
+    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();input.blur()}if(e.key==='Escape'){input.value=oldName;input.blur()}});
+  }else{
+    // Fallback: prompt (may be blocked by some browsers)
+    const name = prompt('重命名会话:', s.name);
+    if(name===null)return;
+    const trimmed = (name||'').trim();
+    if(!trimmed){toast('名称不能为空','err');return}
+    try{
+      const d=await apiPost('/sessions/'+encodeURIComponent(sid)+'/rename',{name:trimmed});
+      if(d.ok){s.name=trimmed;updateSessionTabs();refreshPaneHeaders();toast('已重命名为: '+trimmed,'ok')}
+      else{toast('失败: '+(d.error||'未知'),'err')}
+    }catch(e){toast('失败: '+e.message,'err')}
+  }
 }
 
 function updateSessionTabs(){
@@ -1232,7 +1307,7 @@ function updateSessionTabs(){
   el.innerHTML = sessions.map((s,i)=>{
     const active = s.id===activeSid;
     const icon = s.icon || TABS_ICONS[i % TABS_ICONS.length];
-    return `<div class="session-tab${active?' active':''}" onclick="switchSession('${s.id}')" oncontextmenu="event.preventDefault();renameSession('${s.id}')" title="${esc(s.name)}${active?' (当前)':''}">
+    return `<div class="session-tab${active?' active':''}" data-sid="${s.id}" onclick="switchSession('${s.id}')" oncontextmenu="event.preventDefault();renameSession('${s.id}')" title="${esc(s.name)}${active?' (当前)':''}">
       <span class="tab-icon">${icon}</span>
       ${esc(s.name.substring(0,16))}${s.name.length>16?'…':''}
       <span class="close" onclick="event.stopPropagation();deleteSession('${s.id}')" title="关闭会话">×</span>
@@ -1415,14 +1490,14 @@ function renderChatView(){
     const histId = 'hist'+(i||'0');
     const sendCall = i===0 ? 'sendChat()' : `sendChat('${elId}')`;
     return `
-      <div class="chat-pane" id="chatPane${i}" data-sid="${esc(sid)}" onclick="highlightSessionTab('${esc(sid)}')">
-        <div class="chat-pane-header" title="点击高亮对应标签页">
+      <div class="chat-pane" id="chatPane${i}" data-pane="${i}" onclick="onPaneClick(${i})">
+        <div class="chat-pane-header" id="paneHeader${i}">
           <span class="pane-icon">${paneIcon}</span>
           <span class="pane-name">${esc(paneName)}</span>
           <span class="pane-badge" style="background:${s?.color||'var(--accent)'}"></span>
           <div class="pane-actions">
-            <button onclick="event.stopPropagation();renameSession('${esc(sid)}')" title="重命名">✏️</button>
-            <button onclick="event.stopPropagation();deleteSession('${esc(sid)}')" title="关闭">✕</button>
+            <button onclick="event.stopPropagation();doRenamePane(${i})" title="重命名">✏️</button>
+            <button onclick="event.stopPropagation();doClosePane(${i})" title="关闭">✕</button>
           </div>
         </div>
         <div class="msgs" id="${elId}"></div>
@@ -1532,7 +1607,10 @@ function setupDragDrop(){
   main.addEventListener('drop',async e=>{
     e.preventDefault();counter=0;overlay.classList.remove('show');
     const files = e.dataTransfer?.files; if(!files||!files.length)return;
-    for(const f of files) await uploadFile(f);
+    for(const f of files){
+      if(cur==='groupchat') await uploadGCFile(f);
+      else await uploadFile(f);
+    }
   });
 }
 
@@ -1558,18 +1636,48 @@ function renderFileChips(){
     ${f.is_image?`<img src="/api/files/read?path=${encodeURIComponent(f.path)}" onerror="this.style.display='none'">`:''}
     <span>${esc(f.original||f.filename)}</span>
     <span style="color:var(--text3)">${fmtSize(f.size)}</span>
+    ${f.is_image?`<span class="ocr-btn" onclick="event.stopPropagation();doOCR(${i})" title="OCR 识别图中文字">🔍</span>`:''}
     <span class="remove" onclick="removeFile(${i})">✕</span>
   </div>`).join('');
 }
 function removeFile(i){uploadedFiles.splice(i,1);renderFileChips()}
 
+async function doOCR(i){
+  const f=uploadedFiles[i];if(!f)return;
+  const chip=document.querySelectorAll('.file-chip')[i];
+  let ocrEl=chip?.querySelector('.ocr-result');
+  if(ocrEl){ocrEl.remove();return;}
+  toast('OCR 识别中...','info');
+  try{
+    const r=await fetch('/api/ocr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:f.path})});
+    const d=await r.json();
+    if(!d.ok){toast(d.error||'OCR失败','err');return}
+    if(!d.text){toast('图中未识别到文字','info');return}
+    ocrEl=document.createElement('div');
+    ocrEl.className='ocr-result';
+    ocrEl.innerHTML=`<div class="ocr-text">${esc(d.text)}</div>
+      <div class="ocr-actions">
+        <button onclick="event.stopPropagation();navigator.clipboard.writeText('${esc(d.text).replace(/'/g,"\\'")}');toast('已复制','ok')">📋 复制</button>
+        <button onclick="event.stopPropagation();insertOCRText('${esc(d.text).replace(/'/g,"\\'")}');this.closest('.ocr-result').remove()">💬 填入聊天</button>
+        <button onclick="event.stopPropagation();this.closest('.ocr-result').remove()">✕</button>
+      </div>`;
+    chip.appendChild(ocrEl);
+    toast(`OCR 识别完成 (${d.elapsed||0}s, ${d.lines.length}行)`,'ok');
+  }catch(e){toast('OCR失败: '+e.message,'err')}
+}
+
+function insertOCRText(text){
+  const inp=document.getElementById('cinput0');
+  if(inp){inp.value=(inp.value?inp.value+'\n':'')+text;inp.focus()}
+}
+
 function pasteScreenshot(){
   toast('请使用 Ctrl+V / Cmd+V 粘贴截图','info');
 }
 
-// Screenshot paste
+// Screenshot paste (works in chat and group chat)
 document.addEventListener('paste',async e=>{
-  if(cur!=='chat')return;
+  if(cur!=='chat'&&cur!=='groupchat')return;
   const items=e.clipboardData?.items;if(!items)return;
   for(const item of items){
     if(item.type.startsWith('image/')){
@@ -1581,7 +1689,10 @@ document.addEventListener('paste',async e=>{
         try{
           const r=await fetch('/api/image/paste',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:base64})});
           const d=await r.json();
-          if(d.ok){uploadedFiles.push(d);renderFileChips();toast('截图已粘贴','ok')}
+          if(d.ok){
+            if(cur==='groupchat'){gcFiles.push(d);renderGCFileChips();toast('截图已粘贴到群聊','ok')}
+            else{uploadedFiles.push(d);renderFileChips();toast('截图已粘贴','ok')}
+          }
           else toast(d.error||'粘贴失败','err');
         }catch(ex){toast('粘贴失败: '+ex.message,'err')}
       };
@@ -1665,14 +1776,66 @@ async function clearCurrentChat(targetId){
   toast('当前会话已清空','ok');
 }
 
-// ── Pane Header & History ──
-function highlightSessionTab(sid){
-  // Flash the corresponding session tab
-  const tabs = document.querySelectorAll('.session-tab');
-  tabs.forEach(t=>t.classList.remove('flash-highlight'));
-  const tab = document.querySelector(`.session-tab[onclick*="${sid}"]`);
-  if(tab){tab.classList.add('flash-highlight');setTimeout(()=>tab.classList.remove('flash-highlight'),700)}
+// ── Pane Session Resolution (dynamic, never stale) ──
+function getPaneSid(i){
+  if(i===0) return activeSid;
+  return _paneSids[i-1] || activeSid;
 }
+function findTabForSid(sid){
+  return document.querySelector(`.session-tab[data-sid="${sid}"]`);
+}
+function findPaneForSid(sid){
+  // Return first pane whose resolved session matches
+  const panes = document.querySelectorAll('.chat-pane');
+  for(const p of panes){
+    const pi = parseInt(p.getAttribute('data-pane')||'0');
+    if(getPaneSid(pi)===sid) return p;
+  }
+  return null;
+}
+
+// ── Pane Click → Flash Tab ──
+function onPaneClick(i){
+  const sid = getPaneSid(i);
+  // Flash tab
+  document.querySelectorAll('.session-tab').forEach(t=>t.classList.remove('flash-highlight'));
+  const tab = findTabForSid(sid);
+  if(tab){tab.classList.add('flash-highlight');setTimeout(()=>tab.classList.remove('flash-highlight'),800)}
+  // Also flash the pane briefly
+  const pane = document.getElementById('chatPane'+i);
+  if(pane){pane.style.boxShadow='0 0 0 3px var(--accent)';setTimeout(()=>pane.style.boxShadow='',600)}
+}
+
+// ── Tab Click → Switch + Flash Pane ──
+// (called from switchSession, add flash after switch)
+function flashPaneForSession(sid){
+  const pane = findPaneForSid(sid);
+  if(pane){
+    pane.style.transition='box-shadow .15s';
+    pane.style.boxShadow='0 0 0 4px var(--accent), 0 0 20px rgba(88,166,255,.3)';
+    setTimeout(()=>{pane.style.boxShadow='';setTimeout(()=>pane.style.transition='',300)},900);
+  }
+}
+
+// ── Rename / Close via Pane ──
+function doRenamePane(i){
+  try{
+    const sid = getPaneSid(i);
+    if(!sid){toast('无法获取会话ID','err');return}
+    renameSession(sid);
+  }catch(e){toast('操作失败: '+e.message,'err')}
+}
+function doClosePane(i){
+  try{
+    const sid = getPaneSid(i);
+    if(i===0){toast('主窗格不能关闭，请使用标签页关闭','err');return}
+    _paneSids[i-1] = '';
+    if(_paneSids.every(s=>!s)){_paneLayout='single';_paneSids=[]}
+    renderChatView();
+  }catch(e){toast('操作失败: '+e.message,'err')}
+}
+
+// ── History Panel ──
 function toggleHistoryPanel(histId){
   const panel = document.getElementById(histId);
   const tgl = document.getElementById(histId+'_tgl');
@@ -1680,8 +1843,8 @@ function toggleHistoryPanel(histId){
   const isOpen = panel.classList.toggle('open');
   tgl.classList.toggle('open',isOpen);
   if(isOpen){
-    const paneNum = histId.replace('hist','')||'0';
-    const sid = paneNum==='0' ? activeSid : (_paneSids[parseInt(paneNum)-1]||activeSid);
+    const paneNum = parseInt(histId.replace('hist',''))||0;
+    const sid = getPaneSid(paneNum);
     refreshHistoryPanel(histId, sid);
   }
 }
@@ -1692,67 +1855,56 @@ function refreshHistoryPanel(histId, sid){
   if(!panel)return;
   sid = sid || activeSid;
   const msgs = chatMsgs[sid]||[];
-  // Group into turns
-  let turns = [], cur = null;
+  let turns=[], cur=null;
   msgs.forEach(m=>{
     if(m.role==='user'){if(cur)turns.push(cur);cur={user:m,assistant:null,ts:m.ts}}
     else if(m.role==='assistant'&&cur){cur.assistant=m}
     else{if(cur)turns.push(cur);turns.push({user:m,assistant:null,ts:m.ts});cur=null}
   });
   if(cur)turns.push(cur);
-  if(cntEl)cntEl.textContent = `(${turns.length}轮)`;
+  if(cntEl)cntEl.textContent=`(${turns.length}轮)`;
   if(!turns.length){
-    panel.innerHTML = '<div class="history-empty">暂无聊天记录</div>';
+    panel.innerHTML='<div class="history-empty">暂无聊天记录</div>';
     if(emptyEl)emptyEl.style.display='';
     return;
   }
   if(emptyEl)emptyEl.style.display='none';
-  const elId = histId.replace('hist','msgs');
-  panel.innerHTML = turns.map((t,i)=>{
-    const preview = (t.user?.content||t.assistant?.content||'').replace(/<[^>]*>/g,'').substring(0,50);
-    const icon = t.user?.role==='user' ? '👤' : '🤖';
-    return `<div class="history-item" onclick="scrollToTurn('${elId}',${i})" title="点击跳转到此轮对话">
-      <span class="hi-icon">${icon}</span>
-      <span class="hi-preview">${esc(preview)}</span>
-      <span class="hi-time">${t.ts||''}</span>
-    </div>`;
+  const elId=histId.replace('hist','msgs');
+  panel.innerHTML=turns.map((t,i)=>{
+    const preview=(t.user?.content||t.assistant?.content||'').replace(/<[^>]*>/g,'').substring(0,50);
+    const icon=t.user?.role==='user'?'👤':'🤖';
+    return `<div class="history-item" onclick="scrollToTurn('${elId}',${i})" title="点击跳转"><span class="hi-icon">${icon}</span><span class="hi-preview">${esc(preview)}</span><span class="hi-time">${t.ts||''}</span></div>`;
   }).join('');
 }
-function scrollToTurn(elId, turnIdx){
-  const el = document.getElementById(elId);
-  if(!el)return;
-  // Find the round-fold element
-  const rounds = el.querySelectorAll('.round-fold');
-  if(rounds[turnIdx]){
-    rounds[turnIdx].scrollIntoView({behavior:'smooth',block:'start'});
-    rounds[turnIdx].style.background='var(--glass-bg-strong)';
-    setTimeout(()=>{if(rounds[turnIdx])rounds[turnIdx].style.background=''},1500);
-  }
+function scrollToTurn(elId,turnIdx){
+  const el=document.getElementById(elId);if(!el)return;
+  const rounds=el.querySelectorAll('.round-fold');
+  if(rounds[turnIdx]){rounds[turnIdx].scrollIntoView({behavior:'smooth',block:'start'});rounds[turnIdx].style.background='var(--glass-bg-strong)';setTimeout(()=>{if(rounds[turnIdx])rounds[turnIdx].style.background=''},1500)}
 }
-// Update pane headers after rename or tab switch
+
+// ── Refresh Pane Headers (dynamic lookup) ──
 function refreshPaneHeaders(){
-  const panes = document.querySelectorAll('.chat-pane');
-  panes.forEach(pane=>{
-    const sid = pane.dataset.sid;
-    if(!sid)return;
-    const s = sessions.find(x=>x.id===sid);
+  document.querySelectorAll('.chat-pane').forEach(pane=>{
+    const i=parseInt(pane.getAttribute('data-pane')||'0');
+    const sid=getPaneSid(i);
+    const s=sessions.find(x=>x.id===sid);
     if(!s)return;
-    const nameEl = pane.querySelector('.pane-name');
-    const iconEl = pane.querySelector('.pane-icon');
-    const badgeEl = pane.querySelector('.pane-badge');
-    if(nameEl)nameEl.textContent = s.name||'';
-    if(iconEl && s.icon)iconEl.textContent = s.icon;
-    if(badgeEl && s.color)badgeEl.style.background = s.color;
+    const nameEl=pane.querySelector('.pane-name');
+    const iconEl=pane.querySelector('.pane-icon');
+    const badgeEl=pane.querySelector('.pane-badge');
+    if(nameEl)nameEl.textContent=s.name||'';
+    if(iconEl){const TABS_ICONS_ARR=['💬','📝','💡','🔧','📋','🌟','🎯','🧩','📌','🔮','💎','🌈','🎨','📡','🗂️'];iconEl.textContent=s.icon||TABS_ICONS_ARR[i%15]}
+    if(badgeEl)badgeEl.style.background=s.color||'var(--accent)';
   });
 }
-// Auto-refresh history after messages change
+
+// ── Sync History ──
 function syncHistoryAfterMsg(sid){
-  // Refresh all open history panels for this session
   document.querySelectorAll('.history-panel.open').forEach(panel=>{
-    const histId = panel.id;
-    const paneNum = histId.replace('hist','')||'0';
-    const paneSid = paneNum==='0' ? activeSid : (_paneSids[parseInt(paneNum)-1]||activeSid);
-    if(paneSid===sid)refreshHistoryPanel(histId, sid);
+    const histId=panel.id;
+    const paneNum=parseInt(histId.replace('hist',''))||0;
+    const paneSid=getPaneSid(paneNum);
+    if(paneSid===sid)refreshHistoryPanel(histId,sid);
   });
 }
 
@@ -1846,7 +1998,7 @@ async function viewSessionDetail(p){
 }
 
 // ═══════════════ ENHANCED GROUP CHAT ═══════════════
-let gcAgents=[],gcMsgs=[],gcStreaming=false,gcSupervision=false;
+let gcAgents=[],gcMsgs=[],gcStreaming=false,gcSupervision=false,gcFiles=[];
 async function renderGroupchat(){
   C.style.padding='0';C.style.display='flex';C.style.flexDirection='column';C.style.height='100%';
   try{const d=await api('/groupchat/agents');gcAgents=d.agents||[]}catch(e){gcAgents=[]}
@@ -1880,8 +2032,13 @@ async function renderGroupchat(){
       <button class="btn ghost sm" onclick="showGCHistory()" title="群聊历史" style="font-size:11px">📋 历史</button>
     </span>
   </div>`;
+  // File chips area for group chat
+  h+=`<div class="file-chips" id="gcFileChips" style="margin:4px 0"></div>`;
   // Input row
-  h+=`<div class="row" style="gap:8px"><textarea id="gcinput" placeholder="发送消息给群聊中的所有Agent..." rows="1" style="flex:1;min-height:38px"></textarea>
+  h+=`<div class="row" style="gap:8px"><textarea id="gcinput" placeholder="发送消息给群聊中的所有Agent...（支持粘贴截图、拖拽文件）" rows="1" style="flex:1;min-height:38px"></textarea>
+  <button class="btn sm" onclick="document.getElementById('gcFileInput').click()" title="上传文件">📎</button>
+  <input type="file" id="gcFileInput" multiple style="display:none" onchange="handleGCFileSelect(event)" accept="image/*,.pdf,.txt,.md,.py,.js,.html,.css,.json,.csv,.xml,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip">
+  <button class="btn sm" onclick="pasteGCScreenshot()" title="粘贴截图提示">📷</button>
   <button class="btn acc" id="gcsend" onclick="sendGC()">▶ 发送</button>
   <button class="btn ghost sm" onclick="downloadGCChat()" title="导出群聊记录" style="font-size:12px">💾</button>
   <button class="btn red sm" id="gcstop" onclick="fetch('/api/abort',{method:'POST'});gcStreaming=false;document.getElementById('gcsend').disabled=false;this.style.display='none'" style="display:none">⏹</button></div>`;
@@ -2090,23 +2247,91 @@ function appendGCMsgEl(m){
   const el=document.getElementById('gcout');if(!el)return;
   if(el.querySelector('.empty'))el.innerHTML='';
   const d=document.createElement('div');d.className='gc-msg';
-  d.innerHTML=`<div class="gc-agent"><div class="gc-avatar" style="background:${m.color||'#58a6ff'}">${m.icon||'🤖'}</div><strong>${esc(m.agent||'System')}</strong></div><div style="font-size:13px;line-height:1.55;white-space:pre-wrap">${fmtContent(m.content||'')}</div>`;
+  let filesHtml='';
+  if(m.files&&m.files.length){
+    filesHtml='<div class="gc-files">'+m.files.map(f=>{
+      const imgExts=['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
+      const isImg=imgExts.some(e=>f.path.toLowerCase().endsWith(e));
+      if(isImg) return `<div class="gc-file-img" onclick="showImagePreview('/api/files/read?path=${encodeURIComponent(f.path)}')"><img src="/api/files/read?path=${encodeURIComponent(f.path)}" onerror="this.parentElement.style.display='none'"><span>${esc(f.original||f.filename)}</span></div>`;
+      return `<div class="gc-file-chip"><span>📄 ${esc(f.original||f.filename)}</span><span style="font-size:10px;color:var(--text3)">${fmtSize(f.size)}</span></div>`;
+    }).join('')+'</div>';
+  }
+  d.innerHTML=`<div class="gc-agent"><div class="gc-avatar" style="background:${m.color||'#58a6ff'}">${m.icon||'🤖'}</div><strong>${esc(m.agent||'System')}</strong></div><div style="font-size:13px;line-height:1.55;white-space:pre-wrap">${fmtContent(m.content||'')}</div>${filesHtml}`;
   el.appendChild(d);el.scrollTop=el.scrollHeight;
+}
+
+// ── Group Chat File Upload ──
+async function handleGCFileSelect(e){
+  const files=e.target.files;if(!files||!files.length)return;
+  for(const f of files) await uploadGCFile(f);
+  e.target.value='';
+}
+async function uploadGCFile(file){
+  const form=new FormData();form.append('file',file);
+  try{
+    const r=await fetch('/api/upload',{method:'POST',body:form});
+    const d=await r.json();
+    if(d.ok){gcFiles.push(d);renderGCFileChips();toast(`已上传: ${d.original}`,'ok')}
+    else toast(d.error||'上传失败','err');
+  }catch(e){toast('上传失败: '+e.message,'err')}
+}
+function renderGCFileChips(){
+  const el=document.getElementById('gcFileChips');if(!el)return;
+  el.innerHTML=gcFiles.map((f,i)=>`<div class="file-chip">
+    ${f.is_image?`<img src="/api/files/read?path=${encodeURIComponent(f.path)}" onerror="this.style.display='none'">`:''}
+    <span>${esc(f.original||f.filename)}</span>
+    <span style="color:var(--text3)">${fmtSize(f.size)}</span>
+    ${f.is_image?`<span class="ocr-btn" onclick="event.stopPropagation();doOCRGC(${i})" title="OCR 识别图中文字">🔍</span>`:''}
+    <span class="remove" onclick="removeGCFile(${i})">✕</span>
+  </div>`).join('');
+}
+function removeGCFile(i){gcFiles.splice(i,1);renderGCFileChips()}
+async function doOCRGC(i){
+  const f=gcFiles[i];if(!f)return;
+  const chips=document.querySelectorAll('#gcFileChips .file-chip');
+  let ocrEl=chips[i]?.querySelector('.ocr-result');
+  if(ocrEl){ocrEl.remove();return;}
+  toast('OCR 识别中...','info');
+  try{
+    const r=await fetch('/api/ocr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:f.path})});
+    const d=await r.json();
+    if(!d.ok){toast(d.error||'OCR失败','err');return}
+    if(!d.text){toast('图中未识别到文字','info');return}
+    ocrEl=document.createElement('div');
+    ocrEl.className='ocr-result';
+    ocrEl.innerHTML=`<div class="ocr-text">${esc(d.text)}</div>
+      <div class="ocr-actions">
+        <button onclick="event.stopPropagation();navigator.clipboard.writeText('${esc(d.text).replace(/'/g,"\\'")}');toast('已复制','ok')">📋 复制</button>
+        <button onclick="event.stopPropagation();insertGCOCRText('${esc(d.text).replace(/'/g,"\\'")}');this.closest('.ocr-result').remove()">💬 填入聊天</button>
+        <button onclick="event.stopPropagation();this.closest('.ocr-result').remove()">✕</button>
+      </div>`;
+    chips[i].appendChild(ocrEl);
+    toast(`OCR 识别完成 (${d.elapsed||0}s, ${d.lines.length}行)`,'ok');
+  }catch(e){toast('OCR失败: '+e.message,'err')}
+}
+function insertGCOCRText(text){
+  const inp=document.getElementById('gcinput');
+  if(inp){inp.value=(inp.value?inp.value+'\n':'')+text;inp.focus()}
+}
+function pasteGCScreenshot(){
+  toast('请使用 Ctrl+V / Cmd+V 粘贴截图','info');
 }
 
 async function sendGC(){
   const inp=document.getElementById('gcinput');const msg=inp.value.trim();if(!msg||gcStreaming)return;
   inp.value='';gcStreaming=true;document.getElementById('gcsend').disabled=true;
   const gcStopBtn=document.getElementById('gcstop');if(gcStopBtn)gcStopBtn.style.display='';
-  // Echo user message
+  // Collect files and their paths
+  const filePaths=gcFiles.map(f=>f.path);
+  const sentFiles=[...gcFiles]; // keep copy for display
+  gcFiles=[];renderGCFileChips();
+  // Echo user message with files
   const el=document.getElementById('gcout');if(el){if(el.querySelector('.empty'))el.innerHTML='';
-  const um=document.createElement('div');um.className='gc-msg';
-  um.innerHTML=`<div class="gc-agent"><div class="gc-avatar" style="background:#7c6ff7">👤</div><strong>你</strong></div><div style="font-size:13px;line-height:1.55;white-space:pre-wrap">${fmtContent(msg)}</div>`;
-  el.appendChild(um);el.scrollTop=el.scrollHeight;
-  gcMsgs.push({agent:'你',icon:'👤',color:'#7c6ff7',content:msg,ts:new Date().toLocaleString()});}
+  appendGCMsgEl({agent:'你',icon:'👤',color:'#7c6ff7',content:msg,ts:new Date().toLocaleString(),files:sentFiles});
+  gcMsgs.push({agent:'你',icon:'👤',color:'#7c6ff7',content:msg,ts:new Date().toLocaleString(),files:sentFiles});}
   const supervision = gcSupervision ? {enabled:true,max_rounds:parseInt(document.getElementById('gcsuprounds')?.value||2)} : {enabled:false};
   try{
-    const res=await fetch('/api/groupchat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,agents:gcAgents,supervision})});
+    const res=await fetch('/api/groupchat/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,agents:gcAgents,supervision,files:filePaths})});
     const reader=res.body.getReader();const dec=new TextDecoder();let buf='',currentEl=null;
     while(true){
       const{done,value}=await reader.read();if(done)break;
@@ -2118,7 +2343,7 @@ async function sendGC(){
             currentEl=document.createElement('div');currentEl.className='gc-msg';
             const mdl=d.model?`<span style="font-size:10px;color:var(--text3);margin-left:4px">${esc(d.model)}</span>`:'';
             currentEl.innerHTML=`<div class="gc-agent"><div class="gc-avatar" style="background:${d.color||'#58a6ff'}">${d.icon||'🤖'}</div><strong>${esc(d.agent)}</strong>${mdl}<span style="font-size:10px;color:var(--text3);margin-left:4px">输入中...</span></div><div class="gc-content" style="font-size:13px;line-height:1.55;white-space:pre-wrap"></div>`;
-            el.appendChild(currentEl);
+            el.appendChild(currentEl);el.scrollTop=el.scrollHeight;
           }
           else if(d.type==='chunk'&&currentEl){
             const cd=currentEl.querySelector('.gc-content');if(cd)cd.innerHTML=fmtContent(d.content||'');
@@ -2135,7 +2360,7 @@ async function sendGC(){
           else if(d.type==='info'){
             const infoEl=document.createElement('div');infoEl.className='gc-msg';
             infoEl.innerHTML=`<div style="font-size:12px;color:var(--text2)">${esc(d.content)}</div>`;
-            el.appendChild(infoEl);
+            el.appendChild(infoEl);el.scrollTop=el.scrollHeight;
           }
           else if(d.type==='supervision_round'){
             const rEl=document.createElement('div');rEl.className='gc-msg';
@@ -2145,7 +2370,7 @@ async function sendGC(){
           else if(d.type==='supervision_start'){
             currentEl=document.createElement('div');currentEl.className='gc-msg';
             currentEl.innerHTML=`<div class="gc-agent"><div class="gc-avatar" style="background:#d29922">👁️</div><strong>${esc(d.agent)}</strong><span style="font-size:10px;color:var(--text3);margin-left:4px">审查中...</span></div><div class="gc-content" style="font-size:13px;line-height:1.55;white-space:pre-wrap"></div>`;
-            el.appendChild(currentEl);
+            el.appendChild(currentEl);el.scrollTop=el.scrollHeight;
           }
           else if(d.type==='supervision_chunk'&&currentEl){
             const cd=currentEl.querySelector('.gc-content');if(cd)cd.innerHTML=fmtContent(d.content||'');
@@ -2163,7 +2388,7 @@ async function sendGC(){
             crEl.innerHTML=`<div style="font-size:12px;color:var(--orange);text-align:center;padding:4px">🔄 ${esc(d.agent)} 正在根据反馈修正: ${esc(d.issue||'')}</div>`;
             el.appendChild(crEl);el.scrollTop=el.scrollHeight;
           }
-          else if(d.type==='done'){currentEl=null}
+          else if(d.type==='done'){currentEl=null;el.scrollTop=el.scrollHeight}
         }catch(e){}
       }
     }
@@ -2178,20 +2403,73 @@ async function sendGC(){
 }
 
 function downloadGCChat(){
-  if(!gcMsgs.length){toast('无群聊记录可保存','err');return}
-  let text = '# GenericAgent Group Chat\n';
-  text += '# Exported: '+new Date().toISOString()+'\n\n';
-  gcMsgs.forEach(m=>{
-    text += '## '+esc(m.agent||'System')+'\n';
-    text += (m.content||'')+'\n\n';
-  });
-  const blob = new Blob([text],{type:'text/plain;charset=utf-8'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download='groupchat_'+new Date().toISOString().slice(0,10)+'.md';
-  document.body.appendChild(a);a.click();a.remove();
-  URL.revokeObjectURL(a.href);
-  toast('群聊记录已保存','ok');
+  if(!gcMsgs.length){toast('无群聊记录可导出','err');return}
+  // Ask: JSON or Markdown
+  const expJson = confirm('点击「确定」导出JSON（可重新导入）\n点击「取消」导出Markdown（可阅读）');
+  if(expJson){
+    const data = {version:'1.0',exported:new Date().toISOString(),messages:gcMsgs};
+    const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json;charset=utf-8'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='groupchat_'+new Date().toISOString().slice(0,10)+'.json';
+    document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
+    toast('群聊已导出为 JSON','ok');
+  }else{
+    let text = '# GenericAgent Group Chat\n';
+    text += '# Exported: '+new Date().toISOString()+'\n\n';
+    gcMsgs.forEach(m=>{
+      text += '## '+esc(m.agent||'System')+' ('+(m.ts||'')+')\n';
+      text += (m.content||'')+'\n\n';
+    });
+    const blob = new Blob([text],{type:'text/plain;charset=utf-8'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='groupchat_'+new Date().toISOString().slice(0,10)+'.md';
+    document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
+    toast('群聊已导出为 Markdown','ok');
+  }
+}
+function importGCChat(){
+  const inp = document.getElementById('_gc_import_file');
+  if(inp){inp.click();return}
+  // Create hidden file input
+  const fi = document.createElement('input');
+  fi.type='file';fi.accept='.json,.md,.txt';fi.id='_gc_import_file';fi.style.display='none';
+  fi.onchange = async (e) => {
+    const file = e.target.files[0];
+    if(!file)return;
+    try{
+      const text = await file.text();
+      let msgs = [];
+      if(file.name.endsWith('.json')){
+        const data = JSON.parse(text);
+        msgs = data.messages || data || [];
+      }else{
+        // Parse markdown: ## Agent Name\ncontent
+        const sections = text.split(/\n## /);
+        sections.forEach(sec => {
+          const lines = sec.trim().split('\n');
+          const agent = lines[0].replace(/^## /,'').replace(/\(.*\)/,'').trim();
+          const content = lines.slice(1).join('\n').trim();
+          if(agent && content) msgs.push({agent,icon:'🤖',color:'#58a6ff',content,ts:''});
+        });
+      }
+      if(!msgs.length){toast('未能解析任何消息','err');return}
+      gcMsgs = msgs;
+      await saveGCHistory();
+      // Rerender
+      const el = document.getElementById('gcout');
+      if(el){
+        el.innerHTML='';
+        gcMsgs.forEach(m=>appendGCMsgEl(m));
+        el.scrollTop=el.scrollHeight;
+      }
+      toast(`已导入 ${msgs.length} 条群聊记录`,'ok');
+    }catch(e){toast('导入失败: '+e.message,'err')}
+    fi.remove();
+  };
+  document.body.appendChild(fi);
+  fi.click();
 }
 async function saveGCHistory(){
   try{await apiPost('/groupchat/history/save',{messages:gcMsgs})}catch(e){}
@@ -2201,7 +2479,9 @@ async function loadGCHistory(){
 }
 async function showGCHistory(){
   // Reload from disk to get latest
-  try{const d=await api('/groupchat/history');const msgs=d.messages||[]}catch(e){}
+  let msgs = [];
+  try{const d=await api('/groupchat/history');msgs=d.messages||[]}catch(e){}
+  if(!msgs.length){msgs=gcMsgs} // fallback to current session
   if(!msgs.length){toast('暂无群聊历史记录','err');return}
   let list='';
   msgs.forEach((m,i)=>{
@@ -2217,9 +2497,10 @@ async function showGCHistory(){
     </div>`;
   });
   showModal('📋 群聊历史 ('+msgs.length+'条)',`<div style="max-height:500px;overflow-y:auto">${list}</div>
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn ghost sm" onclick="downloadGCChat()">💾 导出全部</button>
-      <button class="btn red sm" onclick="clearGCHistory()">🗑 清空历史</button>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn ghost sm" onclick="closeModal();downloadGCChat()">💾 导出</button>
+      <button class="btn ghost sm" onclick="closeModal();importGCChat()">📥 导入</button>
+      <button class="btn red sm" onclick="clearGCHistory()">🗑 清空</button>
     </div>`);
 }
 async function viewGCMsgDetail(idx){
@@ -2296,6 +2577,34 @@ async function deleteGCAgent(id){
   gcAgents=gcAgents.filter(a=>a.id!==id);
   await apiPost('/groupchat/agents/save',{agents:gcAgents});
   toast('Agent已删除','ok');renderGroupchat();
+}
+
+// ═══════════════ REFLECTIONS ═══════════════
+async function renderReflections(){
+  C.style.padding='20px 24px';C.style.display='block';
+  try{
+    const d=await api('/reflections');
+    const refs=d.reflections||[];
+    let html=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <h3 style="margin:0">🪞 任务反思 (${refs.length}条)</h3>
+      <div>`;
+    if(refs.length)html+=`<button class="btn" onclick="if(confirm('确定清除全部反思？')){apiPost('/reflections/clear');renderReflections();toast('已清除','ok')}">🗑 清空</button>`;
+    html+=`<button class="btn acc" onclick="renderReflections()">🔄 刷新</button></div></div>`;
+    if(!refs.length){html+='<div class="empty"><p>暂无反思记录</p><p style="font-size:12px;color:var(--text3)">每次对话完成后，Agent 会自动反思并记录经验教训</p></div>'}
+    else html+=refs.slice().reverse().map(r=>`<div class="card" style="margin-bottom:10px;position:relative">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:12px;color:var(--text3)">${esc(r.ts_display)} · ${esc(r.session_id)}</span>
+        <span class="close" onclick="event.stopPropagation();delReflection('${r.id}')" title="删除">✕</span>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">📤 ${esc(r.query_preview||'')}</div>
+      <div style="font-size:13px;line-height:1.6;white-space:pre-wrap">💡 ${esc(r.reflection||'')}</div>
+    </div>`).join('');
+    C.innerHTML=html;
+  }catch(e){C.innerHTML='<div class="empty"><p>加载失败: '+esc(e.message)+'</p></div>'}
+}
+async function delReflection(rid){
+  await fetch('/api/reflections/'+encodeURIComponent(rid),{method:'DELETE'});
+  toast('已删除','ok');renderReflections();
 }
 
 // ═══════════════ AGENT ═══════════════
@@ -2754,6 +3063,13 @@ async function renderSettings(){
       <button class="btn" onclick="importChatSessions()">📥 导入聊天记录</button>
     </div>
     <p style="color:var(--text3);font-size:11px;margin-top:10px">备份包含所有会话记录、群聊Agent配置和应用设置。导入将恢复所有数据。</p></div>`;
+  h+=`<div class="card"><h3>🔄 在线更新</h3>
+    <div id="updateStatus"><p style="font-size:13px;color:var(--text2)">当前版本: <strong style="color:var(--accent)">v${esc(s.version||'?')}</strong></p></div>
+    <div class="row" style="gap:8px;margin-top:8px">
+      <button class="btn acc" onclick="checkUpdate()">🔍 检查更新</button>
+      <button class="btn grn" id="doUpdateBtn" style="display:none" onclick="doUpdate()">⬇️ 立即更新</button>
+    </div>
+    <p style="color:var(--text3);font-size:11px;margin-top:8px">需先在 mykey.py 中配置 update_source 指向版本信息JSON地址。更新后需重启服务。</p></div>`;
   if(mk.content){h+=`<div class="card"><h3>📝 mykey.py 配置 (密钥已脱敏)</h3><textarea id="mkcontent" rows="20">${esc(mk.content)}</textarea><div class="row mt"><button class="btn acc" onclick="saveMyKey()">💾 保存配置</button><span style="font-size:11px;color:var(--red)">⚠ 修改后需重启生效</span></div></div>`}
   if(s.pyproject){h+=`<div class="card"><h3>pyproject.toml</h3><pre>${esc(s.pyproject)}</pre></div>`}
   C.innerHTML=h;
@@ -2768,6 +3084,60 @@ async function renderSettings(){
 async function saveMyKey(){
   const content=document.getElementById('mkcontent').value;
   await apiPost('/config/mykey',{content});toast('配置已保存，请重启生效','ok');
+}
+
+async function checkUpdate(){
+  const st=document.getElementById('updateStatus');
+  st.innerHTML='<p style="font-size:13px;color:var(--orange)">⏳ 正在检查更新...</p>';
+  try{
+    const d=await api('/update/check');
+    if(!d.ok){st.innerHTML=`<p style="font-size:13px;color:var(--red)">❌ ${esc(d.error)}</p>`;return}
+    if(d.has_update){
+      st.innerHTML=`<p style="font-size:13px;color:var(--green)">🆕 发现新版本: <strong>v${esc(d.latest)}</strong> (当前 v${esc(d.current)})</p>
+        ${d.changelog?`<p style="font-size:12px;color:var(--text3);margin-top:4px">${esc(d.changelog)}</p>`:''}`;
+      document.getElementById('doUpdateBtn').style.display='';
+    }else{
+      st.innerHTML=`<p style="font-size:13px;color:var(--green)">✅ 已是最新版本 (v${esc(d.current)})</p>`;
+      document.getElementById('doUpdateBtn').style.display='none';
+    }
+  }catch(e){st.innerHTML=`<p style="font-size:13px;color:var(--red)">❌ 检查失败: ${esc(e.message)}</p>`}
+}
+
+async function doUpdate(){
+  if(!confirm('确定要更新到最新版本？更新完成后将自动重启服务。'))return;
+  const st=document.getElementById('updateStatus');
+  const btn=document.getElementById('doUpdateBtn');
+  btn.disabled=true;btn.textContent='⏳ 更新中...';
+  st.innerHTML='<p style="font-size:13px;color:var(--orange)">⏳ 正在下载更新...</p>';
+  try{
+    const d=await apiPost('/update/run');
+    if(!d.ok){st.innerHTML=`<p style="font-size:13px;color:var(--red)">❌ ${esc(d.error)}</p>`;btn.disabled=false;btn.textContent='⬇️ 立即更新';return}
+    let msg=`<p style="font-size:13px;color:var(--green)">✅ 已更新到 v${esc(d.version||'?')}</p>`;
+    if(d.steps) d.steps.forEach(s=>msg+=`<p style="font-size:11px;color:var(--text3)">  ${s.ok?'✅':'❌'} ${esc(s.step)}</p>`);
+    if(d.need_restart){
+      msg+=`<p style="font-size:13px;color:var(--orange);margin-top:8px">⚠️ 需要重启服务以应用更新</p>`;
+      msg+=`<div class="row" style="gap:8px;margin-top:8px">
+        <button class="btn acc" onclick="doRestart()">🔄 立即重启</button>
+        <span style="font-size:11px;color:var(--text3)">重启后约5秒自动刷新页面</span>
+      </div>`;
+    }
+    st.innerHTML=msg;
+    btn.style.display='none';
+  }catch(e){st.innerHTML=`<p style="font-size:13px;color:var(--red)">❌ 更新失败: ${esc(e.message)}</p>`;btn.disabled=false;btn.textContent='⬇️ 立即更新'}
+}
+
+async function doRestart(){
+  if(!confirm('确定立即重启服务？正在进行的任务将中断。'))return;
+  const st=document.getElementById('updateStatus');
+  st.innerHTML='<p style="font-size:13px;color:var(--orange)">🔄 正在重启...</p>';
+  try{await apiPost('/update/restart')}catch(e){/* expected - server dies */}
+  // Poll until server comes back
+  st.innerHTML+='<p style="font-size:12px;color:var(--text2)">⏳ 等待服务恢复...</p>';
+  for(let i=0;i<30;i++){
+    await new Promise(r=>setTimeout(r,1000));
+    try{const r=await fetch('/api/dashboard');if(r.ok){window.location.reload();return}}catch(e){}
+  }
+  st.innerHTML='<p style="font-size:13px;color:var(--red)">❌ 重启超时，请手动重启 start.bat / start.command</p>';
 }
 
 // ═══════════════ LANGUAGE ═══════════════
@@ -2874,7 +3244,7 @@ async function doSearch(){
 }
 
 // ═══════════════ RENDERERS ═══════════════
-const renderers={dashboard:renderDashboard,chat:renderChat,history:renderHistory,groupchat:renderGroupchat,moments:renderMoments,agent:renderAgent,models:renderModels,channels:renderChannels,monitor:renderMonitor,logs:renderLogs,usage:renderUsage,tools:renderTools,terminal:renderTerminal,files:renderFiles,system:renderSystem,gateway:renderGateway,user:renderUser,settings:renderSettings,language:renderLanguage,memory:renderMemory,skills:renderSkills,tasks:renderTasks,search:renderSearch};
+const renderers={dashboard:renderDashboard,chat:renderChat,history:renderHistory,groupchat:renderGroupchat,moments:renderMoments,reflect:renderReflections,agent:renderAgent,models:renderModels,channels:renderChannels,monitor:renderMonitor,logs:renderLogs,usage:renderUsage,tools:renderTools,terminal:renderTerminal,files:renderFiles,system:renderSystem,gateway:renderGateway,user:renderUser,settings:renderSettings,language:renderLanguage,memory:renderMemory,skills:renderSkills,tasks:renderTasks,search:renderSearch};
 
 // ═══════════════ BACKUP / EXPORT / IMPORT ═══════════════
 function downloadLog(filename){
