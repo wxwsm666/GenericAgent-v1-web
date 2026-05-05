@@ -1,6 +1,6 @@
 """GenericAgent Web UI — Full-featured dashboard with 20 sections."""
 
-VERSION = "0.8.2"
+VERSION = "0.8.3"
 
 import os, sys, json, time, queue, threading, re, glob, platform, socket, subprocess, uuid, copy
 
@@ -20,19 +20,35 @@ app = Flask(__name__,
             static_folder=os.path.join(script_dir, 'static'))
 
 agent = None
+_agent_init_error = None
 agent_lock = threading.Lock()
 
 def get_agent():
-    global agent
-    if agent is None:
+    global agent, _agent_init_error
+    if agent is None and _agent_init_error is None:
         with agent_lock:
-            if agent is None:
-                agent = GeneraticAgent()
-                agent.verbose = False  # Clean output: no tool internals in chat
-                if agent.llmclient is None:
-                    raise RuntimeError("未配置 LLM，请设置 mykey.py")
-                threading.Thread(target=agent.run, daemon=True).start()
+            if agent is None and _agent_init_error is None:
+                try:
+                    agent = GeneraticAgent()
+                    agent.verbose = False
+                    if agent.llmclient is None:
+                        _agent_init_error = "未配置 LLM，请在 mykey.py 中填写 API Key 后重启服务"
+                        agent = None
+                    else:
+                        threading.Thread(target=agent.run, daemon=True).start()
+                except Exception as e:
+                    _agent_init_error = f"LLM 初始化失败: {str(e)}"
     return agent
+
+def get_agent_error():
+    return _agent_init_error
+
+def require_agent():
+    """Return (agent, error_response). Caller must return error_response if agent is None."""
+    ag = get_agent()
+    if ag is None:
+        return None, jsonify({'error': get_agent_error()}), 503
+    return ag, None, None
 
 # ──────────── Response cleaning ────────────
 _TAG_PATS = [r'<' + t + r'>.*?</' + t + r'>' for t in ('thinking', 'file_content', 'tool_use', 'summary')]
@@ -68,7 +84,8 @@ def api_chat():
     prompt = (data.get('message') or '').strip()
     if not prompt:
         return jsonify({'error': 'empty message'}), 400
-    ag = get_agent()
+    ag, err, code = require_agent()
+    if err: return err, code
     if prompt.startswith('/'):
         result = _handle_command(ag, prompt)
         return jsonify({'type': 'command', 'content': result})
@@ -122,13 +139,17 @@ def _handle_command(ag, cmd):
 
 @app.route('/api/abort', methods=['POST'])
 def api_abort():
-    get_agent().abort()
+    ag = get_agent()
+    if ag is not None:
+        ag.abort()
     return jsonify({'ok': True})
 
 # ──────────── Status ────────────
 @app.route('/api/status')
 def api_status():
     ag = get_agent()
+    if ag is None:
+        return jsonify({'running': False, 'llm': '-', 'model': '-', 'history_len': 0, 'error': get_agent_error()})
     return jsonify({
         'running': ag.is_running,
         'llm': ag.get_llm_name(),
@@ -140,7 +161,8 @@ def api_status():
 # ──────────── Models ────────────
 @app.route('/api/llms')
 def api_llms():
-    ag = get_agent()
+    ag, err, code = require_agent()
+    if err: return err, code
     llm_list = ag.list_llms()
     result = []
     for i, name, active in llm_list:
@@ -178,6 +200,8 @@ def _save_custom_models(models):
 
 def _merge_models():
     ag = get_agent()
+    if ag is None:
+        return {'all': [], 'llm': [], 'native': [], 'custom': _load_custom_models()}
     llm_list = ag.list_llms()
     mk, _ = reload_mykeys()
     # Build ordered key list matching llmclients iteration order in load_llm_sessions()
@@ -298,7 +322,8 @@ def api_session_detail():
 @app.route('/api/session/resume', methods=['POST'])
 def api_session_resume():
     idx = request.json.get('index', 0)
-    ag = get_agent()
+    ag, err, code = require_agent()
+    if err: return err, code
     result = handle_frontend_command(ag, f'/continue {idx+1}')
     return jsonify({'result': result})
 
@@ -337,7 +362,8 @@ def api_search():
 # ──────────── Agent / Working Memory ────────────
 @app.route('/api/agent/working')
 def api_agent_working():
-    ag = get_agent()
+    ag, err, code = require_agent()
+    if err: return err, code
     working = {}
     if ag.handler:
         working = ag.handler.working
@@ -345,7 +371,8 @@ def api_agent_working():
 
 @app.route('/api/agent/history')
 def api_agent_history():
-    ag = get_agent()
+    ag, err, code = require_agent()
+    if err: return err, code
     return jsonify({'history': ag.history[-50:]})
 
 # ──────────── Scheduled Tasks ────────────
@@ -760,7 +787,7 @@ def api_usage():
             total_files += 1
             total_size += os.path.getsize(f)
     ag = get_agent()
-    history_count = len(ag.history)
+    history_count = len(ag.history) if ag else 0
     return jsonify({
         'total_sessions': total_files,
         'total_size_kb': total_size // 1024,
@@ -1057,7 +1084,8 @@ def api_groupchat():
 # ──────────── Chat History Clear ────────────
 @app.route('/api/chat/clear', methods=['POST'])
 def api_chat_clear():
-    ag = get_agent()
+    ag, err, code = require_agent()
+    if err: return err, code
     ag.history.clear()
     if ag.handler:
         ag.handler.history_info.clear()
@@ -1100,7 +1128,8 @@ def api_memory_status():
 # ──────────── Model Params ────────────
 @app.route('/api/model_params', methods=['GET'])
 def api_model_params_get():
-    ag = get_agent()
+    ag, err, code = require_agent()
+    if err: return err, code
     backend = ag.llmclient.backend if ag.llmclient else None
     params = {}
     if backend:
@@ -1112,7 +1141,8 @@ def api_model_params_get():
 @app.route('/api/model_params', methods=['POST'])
 def api_model_params_set():
     data = request.json
-    ag = get_agent()
+    ag, err, code = require_agent()
+    if err: return err, code
     backend = ag.llmclient.backend if ag.llmclient else None
     if not backend:
         return jsonify({'error': 'no backend'}), 400
@@ -1184,7 +1214,8 @@ def api_tools_test():
     data = request.json
     tool_name = data.get('tool', '')
     tool_args = data.get('args', {})
-    ag = get_agent()
+    ag, err, code = require_agent()
+    if err: return err, code
     handler = ag.handler
     if not handler:
         return jsonify({'error': 'no active handler, please send a message first'}), 400
@@ -1241,7 +1272,8 @@ def api_gateway_config():
 
 @app.route('/api/gateway/restart', methods=['POST'])
 def api_gateway_restart():
-    ag = get_agent()
+    ag, err, code = require_agent()
+    if err: return err, code
     ag.abort()
     return jsonify({'ok': True, 'message': 'gateway restart signal sent'})
 
@@ -1274,6 +1306,14 @@ def api_users_list():
 @app.route('/api/dashboard')
 def api_dashboard():
     ag = get_agent()
+    if ag is None:
+        return jsonify({
+            'status': 'error', 'version': VERSION,
+            'llm': '-', 'model': '-', 'history_count': 0,
+            'handler_working': False, 'skill_count': 0, 'log_count': 0,
+            'task_count': 0, 'tool_count': 0,
+            'error': get_agent_error(),
+        })
     stats = {
         'status': 'running' if ag.is_running else 'idle',
         'version': VERSION,
@@ -1321,6 +1361,8 @@ class SessionManager:
             'working': {},
             'created_at': time.time()
         }
+        if not self.active_sid:
+            self.active_sid = sid
         self._autosave()
         return self.sessions[sid]
 
@@ -1452,6 +1494,12 @@ def api_sessions_rename(sid):
 def api_sessions_switch():
     sid = (request.json or {}).get('session_id', '')
     ag = get_agent()
+    if ag is None:
+        # Allow session switching without agent — just update active_sid
+        if sid in session_mgr.sessions:
+            session_mgr.active_sid = sid
+            return jsonify({'ok': True, 'active': sid})
+        return jsonify({'ok': False, 'error': get_agent_error()}), 503
     ok = session_mgr.restore(ag, sid)
     return jsonify({'ok': ok, 'active': session_mgr.active_sid})
 
@@ -1478,11 +1526,18 @@ def api_backup_restore():
             name = s.get('name', '恢复的会话')
             messages = s.get('messages', [])
             if sid:
-                session_mgr.create(name, sid=sid)
+                # Create session entry (preserve sid if it doesn't exist)
+                if sid not in session_mgr.sessions:
+                    session_mgr.sessions[sid] = {
+                        'id': sid, 'name': name,
+                        'history': list(messages), 'messages': list(messages),
+                        'working': {}, 'created_at': s.get('created_at', time.time())
+                    }
                 ag = get_agent()
-                session_mgr.switch(ag, sid)
-                ag.history = list(messages)
-                session_mgr.sessions[sid] = {'name': name, 'messages': messages, 'created_at': s.get('created_at', time.time())}
+                if ag is not None:
+                    session_mgr.restore(ag, sid)
+                else:
+                    session_mgr.active_sid = sid
                 restored += 1
         except Exception as e:
             print(f"[Backup] Failed to restore session {s.get('name','?')}: {e}")
@@ -1804,7 +1859,8 @@ def api_gc_send():
     supervision_enabled = supervision.get('enabled', False)
     max_rounds = min(supervision.get('max_rounds', 2), 5)
     file_paths = data.get('files', []) or []
-    ag = get_agent()
+    ag, err, code = require_agent()
+    if err: return err, code
 
     # Clear session cache for fresh contexts each group chat round
     _gc_session_cache.clear()
@@ -1918,6 +1974,8 @@ def api_chat_stream():
     if not prompt:
         return jsonify({'error': 'empty message'}), 400
     ag = get_agent()
+    if ag is None:
+        return jsonify({'error': get_agent_error()}), 503
     # Handle session
     if sid and sid in session_mgr.sessions:
         session_mgr.restore(ag, sid)
@@ -1927,20 +1985,21 @@ def api_chat_stream():
     if prompt.startswith('/'):
         result = _handle_command(ag, prompt)
         return jsonify({'type': 'command', 'content': result})
+    # Save original user message before injecting system context
+    original_prompt = prompt
     # Inject reflection context (past lessons learned)
     reflection_ctx = _get_reflection_context(limit=3)
     if reflection_ctx:
         prompt = f"{reflection_ctx}\n\n{prompt}"
     # Inject reply style constraint
-    if not prompt.startswith('/'):
-        prompt = f"直接回答，禁止复述问题。\n\n{prompt}"
+    prompt = f"直接回答，禁止复述问题。\n\n{prompt}"
     # Inject file context if present
     if file_paths:
         file_hint = '\n'.join(f'[FILE:{p}]' for p in file_paths)
         prompt = f"{file_hint}\n\n{prompt}"
     display_queue = ag.put_task(prompt, source="user")
     if sid:
-        session_mgr.add_message(sid, 'user', prompt)
+        session_mgr.add_message(sid, 'user', original_prompt)
     def generate():
         response = ''
         try:
@@ -1980,6 +2039,8 @@ def api_chat_stream():
 @app.route('/api/idle/status')
 def api_idle_status():
     ag = get_agent()
+    if ag is None:
+        return jsonify({'running': False, 'history_len': 0, 'handler_working': False})
     return jsonify({
         'running': ag.is_running,
         'history_len': len(ag.history),
@@ -2060,7 +2121,8 @@ def api_moments_generate():
     agent_color = data.get('agent_color', '#58a6ff')
     topic = data.get('topic', '')
 
-    ag = get_agent()
+    ag, err, code = require_agent()
+    if err: return err, code
     if ag.is_running:
         return jsonify({'error': 'Agent is busy'}), 409
 
@@ -2168,7 +2230,7 @@ def api_moments_comment():
             # Auto-reply from agent if requested
             if auto_reply:
                 ag = get_agent()
-                if not ag.is_running:
+                if ag is not None and not ag.is_running:
                     agent_name = p.get('agent_name', 'Agent')
                     agent_icon = p.get('agent_icon', '🤖')
                     prompt = f'有人在你发的朋友圈"{p.get("content","")[:50]}..."下面评论了"{content}"。请以第一人称({agent_name})简短回复（1-2句话，自然语气）。直接输出回复内容。'
@@ -2227,6 +2289,8 @@ def api_moments_auto():
         return jsonify({'generated': False, 'reason': 'cooldown'})
 
     ag = get_agent()
+    if ag is None:
+        return jsonify({'generated': False, 'reason': get_agent_error()})
     if ag.is_running:
         return jsonify({'generated': False, 'reason': 'agent busy'})
 
@@ -2415,7 +2479,7 @@ def api_reflections_clear():
 def _agent_chat(prompt, timeout=60):
     """Run a quick agent task and return cleaned response."""
     ag = get_agent()
-    if ag.is_running:
+    if ag is None or ag.is_running:
         return None
     dq = ag.put_task(prompt, source="moments")
     full_resp = ''
@@ -2472,7 +2536,7 @@ def _auto_moments_loop():
                 else:
                     post_interval = random.randint(900, 1500)
                 ag = get_agent()
-                if not ag.is_running:
+                if ag is not None and not ag.is_running:
                     a = random.choice(agents)
                     prompt = f"""你是一个名叫{a['name']}的AI助手。请以第一人称发一条朋友圈动态。
 风格要求：1-3句话，语气自然像真人，可以吐槽工作、分享想法、表达情绪。不要用markdown。直接输出动态内容。"""
@@ -2543,7 +2607,7 @@ def _auto_moments_loop():
                 last_interact = now
                 interact_interval = random.randint(300, 600)
                 ag = get_agent()
-                if not ag.is_running:
+                if ag is not None and not ag.is_running:
                     posts = _load_moments()
                     if posts:
                         # Pick a recent post (last 20)
@@ -2590,7 +2654,10 @@ def _auto_moments_loop():
 
 def start_web_server(port=18600, open_browser=True):
     os.environ['FLASK_PORT'] = str(port)
-    get_agent()
+    agent = get_agent()
+    if agent is None:
+        print(f'\n⚠️  {get_agent_error()}')
+        print(f'   Web UI 仍可访问，但聊天功能需要配置 API Key 后重启。')
     print(f'\n🌐 GenericAgent Web UI: http://localhost:{port}')
     if open_browser:
         import webbrowser

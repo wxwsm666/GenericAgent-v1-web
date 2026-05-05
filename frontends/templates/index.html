@@ -1156,6 +1156,14 @@ async function renderDashboard(){
   let html='';
   try{
     const d=await api('/dashboard');
+    if(d.status==='error'&&d.error){
+      html+=`<div class="card" style="border-color:var(--orange);background:var(--glass-bg-strong);margin-bottom:16px">
+        <h3>⚠️ 未配置 API Key</h3>
+        <p style="margin:8px 0;color:var(--text2)">${esc(d.error)}</p>
+        <p style="margin:8px 0;color:var(--text3);font-size:12px">配置步骤：编辑项目目录下的 <code>mykey.py</code> 文件，填写你的 API Key，然后重启服务。</p>
+        <button class="btn acc" onclick="goPage('settings')">⚙️ 前往设置</button>
+      </div>`;
+    }
     html+=`<div class="grid grid-4">
       <div class="stat-card" onclick="goPage('chat')"><div class="lbl">状态</div><div class="val" style="color:${d.status==='running'?'var(--orange)':'var(--green)'}">${d.status==='running'?'🟡':'🟢'}</div><div class="lbl">${d.status==='running'?'运行中':'空闲'}</div></div>
       <div class="stat-card" onclick="goPage('models')"><div class="lbl">当前模型</div><div class="val" style="font-size:16px">${esc(d.model||'-')}</div><div class="lbl">${esc(d.llm||'-')}</div></div>
@@ -1215,17 +1223,20 @@ let _streaming = {};  // per-pane: {msgs: true, msgs2: true}
 let uploadedFiles = [];
 
 async function loadSessions(){
-  try{const d=await api('/sessions/list');sessions=d.sessions||[]}
+  try{const d=await api('/sessions/list');sessions=d.sessions||[];activeSid=d.active||activeSid}
   catch(e){sessions=[]}
-  // Only create default session on first load, not every time chat page is visited
-  if(!activeSid || !sessions.find(s=>s.id===activeSid)){
+  // Only create default session when server has NO sessions at all
+  if(sessions.length===0){
     await createSession('默认对话');
+  }else if(!activeSid || !sessions.find(s=>s.id===activeSid)){
+    // Fallback: server has sessions but activeSid is stale/invalid
+    activeSid=sessions[0].id;
   }
   // Fetch messages for all sessions to populate chatMsgs
   for(const s of sessions){
     try{
       const d=await api('/sessions/'+encodeURIComponent(s.id)+'/messages');
-      if(!chatMsgs[s.id]) chatMsgs[s.id]=d.messages||[];
+      chatMsgs[s.id]=d.messages||[];
     }catch(e){if(!chatMsgs[s.id])chatMsgs[s.id]=[]}
   }
 }
