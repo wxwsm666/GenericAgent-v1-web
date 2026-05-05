@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 chcp 65001 >nul 2>&1
 :: ============================================================
 ::  GenericAgent - Windows Launcher
@@ -197,16 +198,31 @@ if errorlevel 1 (
 
 cd /d "%PROJECT_DIR%frontends"
 
-:: Run web_server.py directly (more stable than tray_app on Windows)
 echo [OK] Starting server on port %PORT%...
 echo   Error log: %ERRLOG%
 echo.
 
-:: Record start time to detect crash vs normal exit
-set START_TIME=%TIME%
+:: Try tray_app first (gives system tray icon for easy re-access)
+:: If it fails, fall back to web_server.py directly
+set TRAY_OK=0
+"%PROJECT_DIR%.venv\Scripts\python.exe" -c "import pystray; print('OK')" >nul 2>&1
+if not errorlevel 1 (
+    echo [INFO] Launching with system tray icon...
+    "%PROJECT_DIR%.venv\Scripts\python.exe" "%PROJECT_DIR%tray_app.py" --port %PORT% 2>>"%ERRLOG%"
+    set EXIT_CODE=%ERRORLEVEL%
+    if !EXIT_CODE! neq 0 (
+        echo [WARN] Tray app failed (code !EXIT_CODE!), falling back to direct mode...
+        set TRAY_OK=0
+    ) else (
+        set TRAY_OK=1
+    )
+)
 
-"%PROJECT_DIR%.venv\Scripts\python.exe" "%PROJECT_DIR%frontends\web_server.py" --port %PORT% 2>>"%ERRLOG%"
-set EXIT_CODE=%ERRORLEVEL%
+if %TRAY_OK% equ 0 (
+    echo [INFO] Running in direct mode (no tray icon)...
+    "%PROJECT_DIR%.venv\Scripts\python.exe" "%PROJECT_DIR%frontends\web_server.py" --port %PORT% 2>>"%ERRLOG%"
+    set EXIT_CODE=%ERRORLEVEL%
+)
 
 echo.
 if %EXIT_CODE% neq 0 (
