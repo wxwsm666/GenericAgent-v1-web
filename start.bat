@@ -196,24 +196,36 @@ if errorlevel 1 (
 )
 
 cd /d "%PROJECT_DIR%frontends"
-echo [OK] Starting server on port %PORT%...
-echo.
 
 :: Run web_server.py directly (more stable than tray_app on Windows)
+echo [OK] Starting server on port %PORT%...
+echo   Error log: %ERRLOG%
+echo.
+
+:: Record start time to detect crash vs normal exit
+set START_TIME=%TIME%
+
 "%PROJECT_DIR%.venv\Scripts\python.exe" "%PROJECT_DIR%frontends\web_server.py" --port %PORT% 2>>"%ERRLOG%"
-if errorlevel 1 (
-    echo [ERROR] Server crashed. Check error log: %ERRLOG%
-    type "%ERRLOG%" 2>nul
-    echo.
-    echo 常见问题：
-    echo   1. 端口 %PORT% 被占用 - 关闭其他程序后重试
-    echo   2. mykey.py 配置错误 - 检查 API Key 配置
-    echo   3. Python 版本过低 - 需要 Python 3.10+
-    echo.
-    pause
-    exit /b 1
-)
+set EXIT_CODE=%ERRORLEVEL%
 
 echo.
-echo Server stopped. Press any key to exit.
+if %EXIT_CODE% neq 0 (
+    echo ═══════════════════════════════════════════════════════
+    echo   Server exited with code %EXIT_CODE%
+    echo   If this was unexpected, check the log below:
+    echo ═══════════════════════════════════════════════════════
+    echo.
+    type "%ERRLOG%" 2>nul
+    echo.
+    echo ═══════════════════════════════════════════════════════
+    echo   常见问题：
+    echo    1. 端口 %PORT% 被占用 - 关闭其他程序后重试
+    echo    2. mykey.py 配置错误 - 检查 API Key 配置
+    echo    3. Python 版本过低 - 需要 Python 3.10+
+    echo    4. 杀毒软件拦截 - 添加信任列表
+    echo ═══════════════════════════════════════════════════════
+) else (
+    echo Server stopped normally.
+)
+echo.
 pause
