@@ -1754,11 +1754,10 @@ class SessionManager:
             return False
         # Save current session's working state before switching
         self.save_current(ag)
-        # Force abort if somehow still running (callers should already have aborted)
+        # Force abort if running, then wait for daemon thread to truly stop
         if ag.is_running:
             ag.abort()
-            import time as _time
-            _time.sleep(0.3)
+            ag._idle.wait(timeout=30)
         self.active_sid = sid
         s = self.sessions[sid]
         ag.history = list(s.get('history', []))
@@ -1848,11 +1847,6 @@ def api_sessions_switch():
             session_mgr.active_sid = sid
             return jsonify({'ok': True, 'active': sid})
         return jsonify({'ok': False, 'error': get_agent_error()}), 503
-    # Abort running task before switching to prevent freeze
-    if ag.is_running:
-        ag.abort()
-        import time as _time
-        _time.sleep(0.3)
     ok = session_mgr.restore(ag, sid)
     return jsonify({'ok': ok, 'active': session_mgr.active_sid})
 
@@ -2330,17 +2324,16 @@ def api_chat_stream():
     ag = get_agent()
     if ag is None:
         return jsonify({'error': get_agent_error()}), 503
+    # Abort running task before session restore (restore will wait for idle)
+    if ag.is_running:
+        ag.abort()
+        ag._idle.wait(timeout=30)
     # Handle session
     if sid and sid in session_mgr.sessions:
         session_mgr.restore(ag, sid)
     elif sid:
         session_mgr.create('新对话')
         session_mgr.restore(ag, sid)
-    # Auto-abort running task so new message doesn't hang
-    if ag.is_running:
-        ag.abort()
-        import time as _time
-        _time.sleep(0.3)
     if prompt.startswith('/'):
 
         result = _handle_command(ag, prompt)

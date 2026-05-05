@@ -44,9 +44,10 @@ class GeneraticAgent:
         os.makedirs(os.path.join(script_dir, 'temp'), exist_ok=True)
         self.lock = threading.Lock()
         self.task_dir = None
-        self.history = []; self.handler = None; 
-        self.task_queue = queue.Queue() 
+        self.history = []; self.handler = None;
+        self.task_queue = queue.Queue()
         self.is_running = False; self.stop_sig = False
+        self._idle = threading.Event(); self._idle.set()  # signals daemon loop is idle
         self.llm_no = 0;  self.inc_out = False; self.verbose = True
         self.peer_hint = True
         self.load_llm_sessions()
@@ -142,6 +143,7 @@ class GeneraticAgent:
             if raw_query is None:
                 self.task_queue.task_done(); continue
             self.is_running = True
+            self._idle.clear()
             self._current_task_query = raw_query
             rquery = smart_format(raw_query.replace('\n', ' '), max_str_len=200)
             self.history.append(f"[USER]: {rquery}")
@@ -168,12 +170,13 @@ class GeneraticAgent:
                     if len(full_resp) - last_pos > 50 or 'LLM Running' in chunk:
                         display_queue.put({'next': full_resp[last_pos:] if self.inc_out else full_resp, 'source': source})
                         last_pos = len(full_resp)
-                if self.inc_out and last_pos < len(full_resp): display_queue.put({'next': full_resp[last_pos:], 'source': source})
-                if '</summary>' in full_resp: full_resp = full_resp.replace('</summary>', '</summary>\n\n')
-                if '</file_content>' in full_resp: full_resp = re.sub(r'<file_content>\s*(.*?)\s*</file_content>', r'\n````\n<file_content>\n\1\n</file_content>\n````', full_resp, flags=re.DOTALL)                
-                display_queue.put({'done': full_resp, 'source': source})
-                self.history = handler.history_info
-                self._last_interruption = None  # task completed, clear interruption
+                if not self.stop_sig:
+                    if self.inc_out and last_pos < len(full_resp): display_queue.put({'next': full_resp[last_pos:], 'source': source})
+                    if '</summary>' in full_resp: full_resp = full_resp.replace('</summary>', '</summary>\n\n')
+                    if '</file_content>' in full_resp: full_resp = re.sub(r'<file_content>\s*(.*?)\s*</file_content>', r'\n````\n<file_content>\n\1\n</file_content>\n````', full_resp, flags=re.DOTALL)
+                    display_queue.put({'done': full_resp, 'source': source})
+                    self.history = handler.history_info
+                    self._last_interruption = None  # task completed, clear interruption
             except Exception as e:
                 print(f"Backend Error: {format_error(e)}")
                 display_queue.put({'done': full_resp + f'\n```\n{format_error(e)}\n```', 'source': source})
@@ -191,6 +194,7 @@ class GeneraticAgent:
                             'working_memory': handler.working.get('key_info', '') if handler.working else '',
                         }
                 self.is_running = self.stop_sig = False
+                self._idle.set()
                 self.task_queue.task_done()
                 if self.handler is not None: self.handler.code_stop_signal.append(1)
 
