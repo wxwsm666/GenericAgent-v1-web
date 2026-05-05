@@ -945,8 +945,13 @@ def api_save_apikey():
             content = f.read()
     else:
         content = ''
-    # Build config block
-    config_name = f'{provider}_config'
+    # Build config block with protocol-correct name
+    # Providers that need Anthropic-native protocol
+    native_claude_providers = {'minimax', 'deepseek'}
+    if provider in native_claude_providers:
+        config_name = f'native_claude_config_{provider}'
+    else:
+        config_name = f'{provider}_config'
     new_block = f"""{config_name} = {{
     'name': '{provider}',
     'apikey': '{api_key}',
