@@ -59,7 +59,7 @@ def _clean_response(text):
 # ──────────── Pages ────────────
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', version=VERSION)
 
 # ──────────── Chat API ────────────
 @app.route('/api/chat', methods=['POST'])

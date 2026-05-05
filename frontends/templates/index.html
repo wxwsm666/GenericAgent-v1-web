@@ -960,8 +960,10 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
 
 <script>
 // ══════════════════════════════════════════════════════════════
-// GenericAgent v0.6.0 — Application
+// GenericAgent — Application
 // ══════════════════════════════════════════════════════════════
+
+const GA_VERSION = '{{ version }}';
 
 // ── Theme ──
 const THEMES = ['dark','light'];
@@ -3064,7 +3066,7 @@ async function renderSettings(){
     </div>
     <p style="color:var(--text3);font-size:11px;margin-top:10px">备份包含所有会话记录、群聊Agent配置和应用设置。导入将恢复所有数据。</p></div>`;
   h+=`<div class="card"><h3>🔄 在线更新</h3>
-    <div id="updateStatus"><p style="font-size:13px;color:var(--text2)">当前版本: <strong style="color:var(--accent)">v${esc(s.version||'?')}</strong></p></div>
+    <div id="updateStatus"><p style="font-size:13px;color:var(--text2)">当前版本: <strong style="color:var(--accent)">v${esc(GA_VERSION)}</strong></p></div>
     <div class="row" style="gap:8px;margin-top:8px">
       <button class="btn acc" onclick="checkUpdate()">🔍 检查更新</button>
       <button class="btn grn" id="doUpdateBtn" style="display:none" onclick="doUpdate()">⬇️ 立即更新</button>
