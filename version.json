@@ -1,0 +1,6 @@
+{
+  "version": "0.8.1",
+  "changelog": "新增: 本地OCR图片识别、Agent自我反思学习、在线更新系统",
+  "download_url": "https://github.com/wxwsm666/GenericAgent-v1-web/archive/refs/heads/main.zip",
+  "min_python": "3.10"
+}

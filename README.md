@@ -1,7 +1,7 @@
 <div align="center">
 <img src="assets/images/bar.jpg" width="880"/>
 
-<a href="https://trendshift.io/repositories/25944" target="_blank"><img src="https://trendshift.io/api/badge/repositories/25944" alt="lsdefine%2FGenericAgent | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/25944" target="_blank"><img src="https://trendshift.io/api/badge/repositories/25944" alt="wxwsm666%2FGenericAgent-v1-web | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
 </div>
 
@@ -77,7 +77,7 @@ After a few weeks, your agent instance will have a skill tree no one else in the
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/lsdefine/GenericAgent.git
+git clone https://github.com/wxwsm666/GenericAgent-v1-web.git
 cd GenericAgent
 
 # 2. Install minimal dependencies
@@ -96,7 +96,7 @@ python launch.pyw
 If you prefer a modern Python workflow, GenericAgent also provides a minimal `pyproject.toml`:
 
 ```bash
-git clone https://github.com/lsdefine/GenericAgent.git
+git clone https://github.com/wxwsm666/GenericAgent-v1-web.git
 cd GenericAgent
 uv pip install -e ".[ui]"        # Core + GUI dependencies
 cp mykey_template.py mykey.py
@@ -292,7 +292,7 @@ MIT License — see [LICENSE](LICENSE)
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/lsdefine/GenericAgent.git
+git clone https://github.com/wxwsm666/GenericAgent-v1-web.git
 cd GenericAgent
 
 # 2. 安装最小依赖
@@ -311,7 +311,7 @@ python launch.pyw
 如果你习惯现代 Python 工作流，GenericAgent 也提供了一个最小化的 `pyproject.toml`：
 
 ```bash
-git clone https://github.com/lsdefine/GenericAgent.git
+git clone https://github.com/wxwsm666/GenericAgent-v1-web.git
 cd GenericAgent
 uv pip install -e ".[ui]"        # 核心 + GUI 依赖
 cp mykey_template.py mykey.py
@@ -511,10 +511,10 @@ MIT License — 详见 [LICENSE](LICENSE)
 
 ## 📈 Star History
 
-<a href="https://star-history.com/#lsdefine/GenericAgent&Date">
+<a href="https://star-history.com/#wxwsm666/GenericAgent-v1-web&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=lsdefine/GenericAgent&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=lsdefine/GenericAgent&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=lsdefine/GenericAgent&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=wxwsm666/GenericAgent-v1-web&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=wxwsm666/GenericAgent-v1-web&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=wxwsm666/GenericAgent-v1-web&type=Date" />
  </picture>
 </a>
