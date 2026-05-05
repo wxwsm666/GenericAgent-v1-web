@@ -164,6 +164,8 @@ if errorlevel 1 (
 :launch
 set PORT=18600
 set "PROJECT_DIR=%~dp0"
+if not exist "%PROJECT_DIR%temp" mkdir "%PROJECT_DIR%temp"
+set "ERRLOG=%PROJECT_DIR%temp\startup_error.log"
 
 :: Kill any existing process on our port
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%PORT%" ^| findstr "LISTENING" 2^>nul') do (
@@ -180,14 +182,38 @@ echo   Press Ctrl+C or close this window to stop.
 echo ================================================================
 echo.
 
-cd /d "%PROJECT_DIR%frontends"
-:: Try tray_app first (stays in system tray for easy re-access)
-"%PROJECT_DIR%.venv\Scripts\python.exe" "%PROJECT_DIR%tray_app.py" --port %PORT% 2>nul
+:: Try web_server directly first (more reliable on Windows)
+"%PROJECT_DIR%.venv\Scripts\python.exe" -c "import flask; print('Flask OK')" >nul 2>&1
 if errorlevel 1 (
-  :: Fallback: run web server directly
-  "%PROJECT_DIR%.venv\Scripts\python.exe" "%PROJECT_DIR%frontends\web_server.py" --port %PORT%
+    echo [ERROR] Flask not installed. Reinstalling dependencies...
+    "%PROJECT_DIR%.venv\Scripts\pip.exe" install flask requests pystray Pillow --quiet 2>>"%ERRLOG%"
+    if errorlevel 1 (
+        echo [ERROR] Failed to install dependencies. See: %ERRLOG%
+        echo [ERROR] 依赖安装失败。请检查网络连接后重试。
+        pause
+        exit /b 1
+    )
+)
+
+cd /d "%PROJECT_DIR%frontends"
+echo [OK] Starting server on port %PORT%...
+echo.
+
+:: Run web_server.py directly (more stable than tray_app on Windows)
+"%PROJECT_DIR%.venv\Scripts\python.exe" "%PROJECT_DIR%frontends\web_server.py" --port %PORT% 2>>"%ERRLOG%"
+if errorlevel 1 (
+    echo [ERROR] Server crashed. Check error log: %ERRLOG%
+    type "%ERRLOG%" 2>nul
+    echo.
+    echo 常见问题：
+    echo   1. 端口 %PORT% 被占用 - 关闭其他程序后重试
+    echo   2. mykey.py 配置错误 - 检查 API Key 配置
+    echo   3. Python 版本过低 - 需要 Python 3.10+
+    echo.
+    pause
+    exit /b 1
 )
 
 echo.
 echo Server stopped. Press any key to exit.
-pause >nul
+pause

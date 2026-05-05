@@ -168,9 +168,15 @@ else:
         import pystray
     except ImportError:
         print("Installing pystray + Pillow...")
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pystray', 'Pillow'])
-        from PIL import Image, ImageDraw
-        import pystray
+        try:
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'pystray', 'Pillow'],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            from PIL import Image, ImageDraw
+            import pystray
+        except Exception as e:
+            print(f'[Tray] Failed to install pystray: {e}')
+            print('[Tray] Falling back to web_server.py — run it directly.')
+            sys.exit(1)
 
     def _make_icon():
         img = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
