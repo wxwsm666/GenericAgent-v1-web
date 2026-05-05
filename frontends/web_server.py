@@ -90,7 +90,7 @@ def api_chat():
         result = _handle_command(ag, prompt)
         return jsonify({'type': 'command', 'content': result})
     if not prompt.startswith('/'):
-        prompt = f"直接回答，禁止复述问题。\n\n{prompt}"
+        prompt = f"遇到任务优先调用工具尝试，不要直接说做不到。回复简洁直接。\n\n{prompt}"
     display_queue = ag.put_task(prompt, source="user")
     def generate():
         response = ''
@@ -2104,7 +2104,7 @@ def api_chat_stream():
     if reflection_ctx:
         prompt = f"{reflection_ctx}\n\n{prompt}"
     # Inject reply style constraint
-    prompt = f"直接回答，禁止复述问题。\n\n{prompt}"
+    prompt = f"遇到任务优先调用工具尝试，不要直接说做不到。回复简洁直接。\n\n{prompt}"
     # Inject file context if present
     if file_paths:
         file_hint = '\n'.join(f'[FILE:{p}]' for p in file_paths)
@@ -2114,21 +2114,10 @@ def api_chat_stream():
         ctx = ag._last_interruption
         query_preview = (ctx.get('query', '') or '')[:150]
         turns = ctx.get('agent_turns', 0)
-        last_step = (ctx.get('last_summary', '') or '')[:120]
-        wm = (ctx.get('working_memory', '') or '')[:200]
-        parts = ['[系统通知] 你上一个任务被用户中断了，现在用户发了新消息。']
+        parts = [f'[系统通知] 上一任务被中断（{turns}轮）。']
         if query_preview:
-            parts.append(f'上一任务: {query_preview}')
-        parts.append(f'已执行回合: {turns} 轮')
-        if last_step:
-            parts.append(f'最后操作: {last_step}')
-        if wm:
-            parts.append(f'工作记忆: {wm}')
-        parts.append('')
-        parts.append('请按以下流程处理:')
-        parts.append('1. 先简短回应用户的新消息')
-        parts.append('2. 告知上一任务的进度')
-        parts.append('3. 询问用户是继续上一任务、按新要求做、还是依次执行')
+            parts.append(f'原任务: {query_preview}')
+        parts.append('先处理用户的新消息，再判断是否继续原任务。')
         prompt = '\n'.join(parts) + '\n\n' + prompt
         ag._last_interruption = None  # only inject once
     display_queue = ag.put_task(prompt, source="user")
