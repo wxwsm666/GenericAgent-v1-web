@@ -420,6 +420,46 @@ def api_custom_models_delete(mid):
     _save_custom_models(models)
     return jsonify({'ok': True})
 
+@app.route('/api/models/builtin/<key_name>', methods=['DELETE'])
+def api_builtin_models_delete(key_name):
+    """Delete a built-in model config block from mykey.py."""
+    import re
+    mykey_path = os.path.join(project_dir, 'mykey.py')
+    if not os.path.isfile(mykey_path):
+        return jsonify({'ok': False, 'error': 'mykey.py 不存在'}), 404
+    with open(mykey_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    # Remove the config block for this key_name
+    pattern = rf'^#?\s*{re.escape(key_name)}\s*=\s*\{{.*?^\}}'
+    new_content, count = re.subn(pattern, '', content, flags=re.MULTILINE | re.DOTALL)
+    if count == 0:
+        return jsonify({'ok': False, 'error': f'未找到配置块: {key_name}'}), 404
+    # Clean up triple+ blank lines left by removal
+    new_content = re.sub(r'\n{3,}', '\n\n', new_content)
+    # Also remove reference from mixin_config llm_nos if present
+    mk, _ = reload_mykeys()
+    cfg = mk.get(key_name, {})
+    model_name = cfg.get('name', '') if isinstance(cfg, dict) else ''
+    if model_name:
+        mixin_pattern = rf"(\s*'{re.escape(model_name)}'\s*,?)"
+        for mixin_key, mixin_val in mk.items():
+            if isinstance(mixin_val, dict) and 'llm_nos' in mixin_val:
+                old = new_content
+                mixin_block = rf'^({re.escape(mixin_key)}\s*=\s*\{{.*?^\}})'
+                def _remove_ref(m):
+                    block = m.group(0)
+                    block = re.sub(mixin_pattern, '', block)
+                    # Clean trailing comma before ]
+                    block = re.sub(r",\s*\]", ']', block)
+                    return block
+                new_content = re.sub(mixin_block, _remove_ref, new_content, flags=re.MULTILINE | re.DOTALL)
+    with open(mykey_path, 'w', encoding='utf-8') as f:
+        f.write(new_content)
+    # Reset agent so next request reinitializes
+    global agent
+    agent = None
+    return jsonify({'ok': True, 'removed': key_name})
+
 @app.route('/api/models/custom/restore', methods=['POST'])
 def api_custom_models_restore():
     """Restore custom models from backup."""

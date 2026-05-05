@@ -2855,7 +2855,7 @@ async function renderModels(){
       h+=`<tr><td>${m.index}</td><td>${esc(m.name)}</td><td>${esc(m.model||'-')}</td><td><span class="tag">${esc(m.type||'-')}</span></td>
         <td>${valBadge}</td>
         <td><span class="tag ${m.active?'on':'off'}">${m.active?'当前':'可用'}</span></td>
-        <td>${switchBtn}</td></tr>`;
+        <td>${switchBtn} <button class="btn red sm ghost" onclick="deleteBuiltinModel('${esc(m.key)}')" title="从 mykey.py 中删除此模型" style="font-size:10px">🗑</button></td></tr>`;
     });
     h+='</table>';
   }
@@ -2937,6 +2937,14 @@ async function testModelConnection(id){
   }catch(e){el.innerHTML=`<div class="card"><p style="color:var(--red)">❌ 测试失败: ${esc(e.message)}</p></div>`}
 }
 async function switchLLM(i){await apiPost('/switch_llm',{index:i});toast('模型已切换','ok');refreshStatus();setTimeout(()=>renderModels(),500)}
+async function deleteBuiltinModel(keyName){
+  if(!confirm(`确定要从 mykey.py 中删除模型 "${keyName}" 吗？\n\n此操作不可撤销，模型配置将被永久移除。`)) return;
+  try{
+    const r=await api('/models/builtin/'+encodeURIComponent(keyName),{method:'DELETE'});
+    if(r.ok){toast('模型已删除，请重启服务生效','ok');renderModels()}
+    else{toast('删除失败: '+(r.error||'未知错误'),'err')}
+  }catch(e){toast('删除失败: '+e.message,'err')}
+}
 async function validateAllModels(){
   toast('⏳ 正在验证 API Key...','ok');
   try{
