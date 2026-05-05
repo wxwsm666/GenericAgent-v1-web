@@ -3561,25 +3561,33 @@ async function updatePetStatus(){
 updatePetStatus();setInterval(updatePetStatus,8000);
 
 // ── Drag ──
+let _dragMoved=false;
 pet.addEventListener('mousedown',e=>{
   if(e.button!==0)return;
-  const r=pet.getBoundingClientRect();isDrag=true;dragOffX=e.clientX-r.left;dragOffY=e.clientY-r.top;
-  pet.classList.add('dragging');pet.style.right='auto';pet.style.bottom='auto';
-  pet.style.left=r.left+'px';pet.style.top=r.top+'px';
+  const r=pet.getBoundingClientRect();
+  isDrag=true; _dragMoved=false;
+  dragOffX=e.clientX-r.left; dragOffY=e.clientY-r.top;
   e.preventDefault();
 });
 document.addEventListener('mousemove',e=>{
   if(!isDrag)return;
-  pet.style.left=(e.clientX-dragOffX)+'px';pet.style.top=(e.clientY-dragOffY)+'px';
+  const nx=e.clientX-dragOffX, ny=e.clientY-dragOffY;
+  if(!_dragMoved){
+    if(Math.abs(nx-pet.getBoundingClientRect().left)<4 && Math.abs(ny-pet.getBoundingClientRect().top)<4)return;
+    _dragMoved=true;
+    pet.classList.add('dragging');
+    pet.style.right='auto'; pet.style.bottom='auto';
+  }
+  pet.style.left=nx+'px'; pet.style.top=ny+'px';
 });
 document.addEventListener('mouseup',()=>{
   if(!isDrag)return;
-  isDrag=false;pet.classList.remove('dragging');
+  isDrag=false; pet.classList.remove('dragging');
 });
 
 // ── Click interact ──
 pet.addEventListener('click',e=>{
-  if(isDrag)return;
+  if(_dragMoved){_dragMoved=false;return;}
   changeMood(3);
   say(MSGS[Math.floor(Math.random()*MSGS.length)]);
   pet.style.transition='transform .15s';

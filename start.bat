@@ -112,7 +112,7 @@ set "VENV_PIP=.venv\Scripts\pip.exe"
 if exist ".venv\.deps_installed" goto :deps_ok
 echo [SETUP] Installing dependencies (needs internet, ~1 min)...
 "%VENV_PIP%" install --upgrade pip --quiet
-"%VENV_PIP%" install flask requests beautifulsoup4 bottle simple-websocket-server pystray Pillow lark-oapi dingtalk-stream --quiet
+"%VENV_PIP%" install flask requests beautifulsoup4 bottle simple-websocket-server pystray Pillow lark-oapi dingtalk-stream rapidocr-onnxruntime --quiet
 if not errorlevel 1 goto :deps_done
 echo.
 echo [ERROR] Failed to install dependencies.

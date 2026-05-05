@@ -1,4 +1,7 @@
 """GenericAgent Web UI — Full-featured dashboard with 20 sections."""
+
+VERSION = "0.8.2"
+
 import os, sys, json, time, queue, threading, re, glob, platform, socket, subprocess, uuid, copy
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -883,7 +886,7 @@ def api_user():
 # ──────────── Settings ────────────
 @app.route('/api/settings')
 def api_settings():
-    config = {}
+    config = {'version': VERSION}
     mykey_path = os.path.join(project_dir, 'mykey.py')
     if os.path.isfile(mykey_path):
         config['mykey_exists'] = True
@@ -894,6 +897,157 @@ def api_settings():
     if os.path.isfile(pyproject):
         config['pyproject'] = open(pyproject, encoding='utf-8').read()
     return jsonify(config)
+
+# ──────────── Online Update ────────────
+def _get_update_source():
+    """Read update_source from mykey.py if configured."""
+    try:
+        import mykey
+        return getattr(mykey, 'update_source', None), getattr(mykey, 'update_channel', 'stable')
+    except Exception:
+        return None, 'stable'
+
+@app.route('/api/update/check')
+def api_update_check():
+    """Check for available updates from configured update_source."""
+    update_url, channel = _get_update_source()
+    if not update_url:
+        return jsonify({'ok': False, 'error': '未配置更新源。请在 mykey.py 中设置 update_source'})
+    try:
+        import urllib.request
+        req = urllib.request.Request(update_url)
+        resp = urllib.request.urlopen(req, timeout=10)
+        info = json.loads(resp.read().decode('utf-8'))
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'获取更新信息失败: {str(e)}'})
+    remote_ver = info.get('version', '')
+    changelog = info.get('changelog', '')
+    download_url = info.get('download_url', '')
+    # Parse versions
+    def _ver_tuple(v):
+        try:
+            return tuple(int(x) for x in v.replace('v','').split('.')[:3])
+        except Exception:
+            return (0, 0, 0)
+    local = _ver_tuple(VERSION)
+    remote = _ver_tuple(remote_ver)
+    has_update = remote > local
+    # Check if git repo for easier update
+    is_git = os.path.isdir(os.path.join(project_dir, '.git'))
+    return jsonify({
+        'ok': True,
+        'current': VERSION,
+        'latest': remote_ver,
+        'has_update': has_update,
+        'changelog': changelog,
+        'download_url': download_url,
+        'is_git': is_git,
+        'channel': channel,
+    })
+
+@app.route('/api/update/run', methods=['POST'])
+def api_update_run():
+    """Execute the update: git pull or download zip, then reinstall deps if needed."""
+    update_url, channel = _get_update_source()
+    if not update_url:
+        return jsonify({'ok': False, 'error': '未配置更新源'})
+    # Step 1: Get the latest version info
+    try:
+        import urllib.request
+        req = urllib.request.Request(update_url)
+        resp = urllib.request.urlopen(req, timeout=10)
+        info = json.loads(resp.read().decode('utf-8'))
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'获取更新信息失败: {str(e)}'})
+    remote_ver = info.get('version', '')
+    download_url = info.get('download_url', '')
+    is_git = os.path.isdir(os.path.join(project_dir, '.git'))
+    result = {'ok': True, 'version': remote_ver, 'steps': []}
+    try:
+        if is_git:
+            # Git-based update
+            r = subprocess.run(['git', 'pull', '--ff-only'], cwd=project_dir,
+                               capture_output=True, text=True, timeout=60)
+            result['steps'].append({'step': 'git pull', 'ok': r.returncode == 0, 'output': r.stdout[-300:]})
+            if r.returncode != 0:
+                result['steps'].append({'step': 'git pull', 'ok': False, 'output': r.stderr[-300:]})
+                result['ok'] = False
+                return jsonify(result)
+        elif download_url:
+            # Zip-based update
+            import tempfile, shutil
+            zip_path = os.path.join(tempfile.gettempdir(), 'genericagent_update.zip')
+            urllib.request.urlretrieve(download_url, zip_path)
+            result['steps'].append({'step': '下载更新包', 'ok': True})
+            # Extract to temp dir, then copy over
+            extract_dir = os.path.join(tempfile.gettempdir(), 'genericagent_update_extract')
+            if os.path.isdir(extract_dir):
+                shutil.rmtree(extract_dir)
+            shutil.unpack_archive(zip_path, extract_dir)
+            result['steps'].append({'step': '解压更新包', 'ok': True})
+            # Find the project root in the extracted files
+            # Zip might have a top-level folder; find web_server.py to locate root
+            extracted_root = extract_dir
+            for root, dirs, files in os.walk(extract_dir):
+                if 'web_server.py' in files and 'start.bat' in files:
+                    extracted_root = root
+                    break
+            # Copy files (overwrite), but preserve mykey.py and .venv
+            preserve = {'mykey.py', '.venv', 'temp', '.git'}
+            for item in os.listdir(extracted_root):
+                if item in preserve:
+                    continue
+                src = os.path.join(extracted_root, item)
+                dst = os.path.join(project_dir, item)
+                if os.path.isdir(src):
+                    if os.path.isdir(dst):
+                        shutil.rmtree(dst)
+                    shutil.copytree(src, dst)
+                else:
+                    shutil.copy2(src, dst)
+            result['steps'].append({'step': '覆盖文件', 'ok': True})
+            # Cleanup
+            os.remove(zip_path)
+            shutil.rmtree(extract_dir)
+        else:
+            return jsonify({'ok': False, 'error': '无可用的更新方式（非Git仓库且未提供下载地址）'})
+        # Step 2: Check if dependencies changed
+        req_file = os.path.join(project_dir, 'requirements.txt')
+        deps_flag = os.path.join(project_dir, '.venv', '.deps_installed')
+        if os.path.isfile(req_file):
+            subprocess.run([sys.executable, '-m', 'pip', 'install', '-r', req_file, '-q'],
+                          cwd=project_dir, timeout=120)
+            result['steps'].append({'step': '更新依赖', 'ok': True})
+        elif os.path.isfile(deps_flag):
+            os.remove(deps_flag)  # trigger reinstall on next start
+            result['steps'].append({'step': '标记依赖需刷新', 'ok': True})
+        result['need_restart'] = True
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'更新失败: {str(e)}'})
+
+@app.route('/api/update/restart', methods=['POST'])
+def api_update_restart():
+    """Restart the web server (cross-platform)."""
+    def _restart():
+        time.sleep(0.5)
+        # Re-exec the same command that started this server
+        script = os.path.join(script_dir, 'web_server.py')
+        args = [sys.executable, script, '--port', str(_get_port())]
+        if os.name == 'nt':
+            # Windows: spawn detached process
+            subprocess.Popen(args, creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS)
+        else:
+            # macOS/Linux: spawn in background, then exit
+            subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           start_new_session=True)
+        os._exit(0)
+    threading.Thread(target=_restart, daemon=True).start()
+    return jsonify({'ok': True, 'message': '重启中...'})
+
+def _get_port():
+    """Best-effort extract current port number."""
+    return int(os.environ.get('FLASK_PORT', 18600))
 
 # ──────────── Group Chat ────────────
 @app.route('/api/groupchat')
@@ -1122,6 +1276,7 @@ def api_dashboard():
     ag = get_agent()
     stats = {
         'status': 'running' if ag.is_running else 'idle',
+        'version': VERSION,
         'llm': ag.get_llm_name(),
         'model': ag.get_llm_name(model=True),
         'history_count': len(ag.history),
@@ -1411,6 +1566,44 @@ def api_image_paste():
 def api_uploads(filename):
     return send_from_directory(UPLOAD_DIR, filename)
 
+# ──────────── OCR API ────────────
+_ocr_engine = None
+
+def _get_ocr_engine():
+    global _ocr_engine
+    if _ocr_engine is None:
+        from rapidocr_onnxruntime import RapidOCR
+        _ocr_engine = RapidOCR()
+    return _ocr_engine
+
+@app.route('/api/ocr', methods=['POST'])
+def api_ocr():
+    """Extract text from an uploaded image using local RapidOCR (free, offline)."""
+    data = request.json or {}
+    path = data.get('path', '')
+    if not path or not os.path.isfile(path):
+        return jsonify({'ok': False, 'error': '文件不存在'}), 400
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp'):
+        return jsonify({'ok': False, 'error': f'不支持的图片格式: {ext}'}), 400
+    try:
+        from PIL import Image
+        import numpy as np
+        img = Image.open(path)
+        if img.mode not in ('RGB', 'L'):
+            img = img.convert('RGB')
+        engine = _get_ocr_engine()
+        result, elapse = engine(np.array(img))
+        elapsed = round(elapse[0] if isinstance(elapse, (list, tuple)) else elapse, 2)
+        if not result:
+            return jsonify({'ok': True, 'text': '', 'lines': [], 'details': [], 'elapsed': elapsed})
+        lines = [r[1] for r in result]
+        details = [{'bbox': [[int(x) for x in pt] for pt in r[0]], 'text': r[1], 'conf': float(r[2])} for r in result]
+        text = '\n'.join(lines)
+        return jsonify({'ok': True, 'text': text, 'lines': lines, 'details': details, 'elapsed': elapsed})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'OCR 识别失败: {str(e)}'}), 500
+
 # ──────────── Group Chat Agent Management ────────────
 GC_AGENTS_FILE = os.path.join(project_dir, 'temp', 'groupchat_agents.json')
 GC_HISTORY_FILE = os.path.join(project_dir, 'temp', 'groupchat_history.json')
@@ -1473,13 +1666,20 @@ def _resolve_model_session(model_key, ag):
 
 
 def _run_agent_turn(agent, message, ag, is_coordinator=False, coord_response='',
-                     correction_prompt='', previous_response=''):
+                     correction_prompt='', previous_response='', file_paths=None):
     """Run a single agent turn using its assigned model. Yields SSE event strings."""
     model_key = agent.get('model_key')
     session = _resolve_model_session(model_key, ag)
 
     role_label = '协调者' if is_coordinator or agent.get('role') == 'coordinator' else '专家'
     prompt = f"[群聊模式] 你是{agent['name']}（{role_label}）。{agent.get('prompt','')}\n\n"
+
+    # Inject file context
+    file_hint = ''
+    if file_paths:
+        file_hint = '\n'.join(f'[FILE:{p}]' for p in file_paths)
+        file_hint += '\n\n注意：用户上传了文件，请根据文件内容进行分析。图片文件请尝试通过文件路径读取内容。\n'
+        prompt += file_hint
 
     if correction_prompt:
         prompt += f"用户问题: {message}\n\n你之前的回答:\n{previous_response}\n\n监督者指出问题:\n{correction_prompt}\n\n请根据反馈修正你的回答。"
@@ -1603,13 +1803,15 @@ def api_gc_send():
     supervision = data.get('supervision', {})
     supervision_enabled = supervision.get('enabled', False)
     max_rounds = min(supervision.get('max_rounds', 2), 5)
+    file_paths = data.get('files', []) or []
     ag = get_agent()
 
     # Clear session cache for fresh contexts each group chat round
     _gc_session_cache.clear()
 
     def generate():
-        yield f"data: {json.dumps({'type':'info','content':f'👥 群聊已收到消息，{len(agents)}个Agent参与讨论...'})}\n\n"
+        file_info = f'，附带{len(file_paths)}个文件' if file_paths else ''
+        yield f"data: {json.dumps({'type':'info','content':f'👥 群聊已收到消息{file_info}，{len(agents)}个Agent参与讨论...'})}\n\n"
 
         # ── Step 1: Coordinator ──
         coordinator = next((a for a in agents if a.get('role') == 'coordinator'), None)
@@ -1617,13 +1819,13 @@ def api_gc_send():
         coord_response = ''
         if coordinator:
             coord_id = coordinator['id']
-            coord_response = yield from _run_agent_turn(coordinator, message, ag, is_coordinator=True)
+            coord_response = yield from _run_agent_turn(coordinator, message, ag, is_coordinator=True, file_paths=file_paths)
 
         # ── Step 2: Specialists ──
         specialist_responses = {}  # agent_id -> response_text
         specialists = [a for a in agents if a.get('role') != 'coordinator']
         for agent in specialists:
-            resp = yield from _run_agent_turn(agent, message, ag, coord_response=coord_response)
+            resp = yield from _run_agent_turn(agent, message, ag, coord_response=coord_response, file_paths=file_paths)
             specialist_responses[agent['id']] = resp
 
         # ── Step 3: Supervision loop ──
@@ -1725,6 +1927,10 @@ def api_chat_stream():
     if prompt.startswith('/'):
         result = _handle_command(ag, prompt)
         return jsonify({'type': 'command', 'content': result})
+    # Inject reflection context (past lessons learned)
+    reflection_ctx = _get_reflection_context(limit=3)
+    if reflection_ctx:
+        prompt = f"{reflection_ctx}\n\n{prompt}"
     # Inject reply style constraint
     if not prompt.startswith('/'):
         prompt = f"直接回答，禁止复述问题。\n\n{prompt}"
@@ -1755,6 +1961,9 @@ def api_chat_stream():
                         session_mgr.add_message(sid, 'assistant', final)
                         session_mgr.save_current(ag)
                     yield f"data: {json.dumps({'type':'done','content':final})}\n\n"
+                    # Trigger post-task reflection in background
+                    if sid:
+                        threading.Thread(target=_reflect_on_task, args=(prompt, final, sid), daemon=True).start()
                     break
         except GeneratorExit:
             ag.abort()
@@ -2119,6 +2328,90 @@ def _get_agents_list():
         ]
     return agents
 
+# ──────────── Reflection / Self-Learning ────────────
+REFLECTIONS_FILE = os.path.join(project_dir, 'temp', 'reflections.json')
+
+def _load_reflections():
+    if os.path.isfile(REFLECTIONS_FILE):
+        try:
+            with open(REFLECTIONS_FILE, encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return []
+
+def _save_reflections(refs):
+    os.makedirs(os.path.dirname(REFLECTIONS_FILE), exist_ok=True)
+    with open(REFLECTIONS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(refs, f, ensure_ascii=False, indent=2)
+
+def _reflect_on_task(user_query, ai_response, sid):
+    """Post-task reflection: analyze what went well/poorly, extract lessons."""
+    try:
+        time.sleep(3)  # brief delay so agent is free
+        # Compose reflection prompt
+        q_short = user_query[:300].replace('\n', ' ')
+        a_short = ai_response[:500].replace('\n', ' ')
+        reflection_prompt = f"""请反思刚才完成的任务：
+
+用户问题：{q_short}
+AI回复摘要：{a_short}
+
+请简要分析：
+1. 任务是否成功完成？
+2. 执行过程中有什么问题或不足？
+3. 有什么经验教训可以用于未来类似任务？
+
+请用中文回答，控制在150字以内。直接输出反思内容，不要用markdown格式。"""
+        result = _agent_chat(reflection_prompt, timeout=45)
+        if not result:
+            return
+        refs = _load_reflections()
+        entry = {
+            'id': uuid.uuid4().hex[:12],
+            'ts': time.time(),
+            'ts_display': time.strftime('%m-%d %H:%M', time.localtime()),
+            'session_id': sid,
+            'query_preview': q_short[:100],
+            'response_preview': a_short[:200],
+            'reflection': result.strip(),
+        }
+        refs.append(entry)
+        # Keep last 200 reflections
+        if len(refs) > 200:
+            refs = refs[-200:]
+        _save_reflections(refs)
+    except Exception:
+        pass  # silent fail — reflection is non-critical
+
+def _get_reflection_context(limit=5):
+    """Get recent reflection summaries to inject as pre-task context."""
+    refs = _load_reflections()
+    if not refs:
+        return ''
+    recent = refs[-limit:]
+    lines = ['\n[经验记忆] 以下是近期任务的经验教训，请参考但不要逐字复述：']
+    for i, r in enumerate(reversed(recent), 1):
+        lines.append(f"{i}. {r['reflection']}")
+    return '\n'.join(lines)
+
+@app.route('/api/reflections', methods=['GET'])
+def api_reflections():
+    refs = _load_reflections()
+    return jsonify({'reflections': refs})
+
+@app.route('/api/reflections/<rid>', methods=['DELETE'])
+def api_reflections_delete(rid):
+    refs = _load_reflections()
+    refs = [r for r in refs if r.get('id') != rid]
+    _save_reflections(refs)
+    return jsonify({'ok': True})
+
+@app.route('/api/reflections/clear', methods=['POST'])
+def api_reflections_clear():
+    _save_reflections([])
+    return jsonify({'ok': True})
+
 def _agent_chat(prompt, timeout=60):
     """Run a quick agent task and return cleaned response."""
     ag = get_agent()
@@ -2296,6 +2589,7 @@ def _auto_moments_loop():
             time.sleep(60)
 
 def start_web_server(port=18600, open_browser=True):
+    os.environ['FLASK_PORT'] = str(port)
     get_agent()
     print(f'\n🌐 GenericAgent Web UI: http://localhost:{port}')
     if open_browser:
