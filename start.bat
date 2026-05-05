@@ -4,12 +4,12 @@
 ::  Double-click start.bat to run.
 :: ============================================================
 
-title GenericAgent v0.8.1
+title GenericAgent
 cd /d "%~dp0"
 
 echo.
 echo ================================================================
-echo    GenericAgent Web UI  v0.8.1
+echo    GenericAgent Web UI
 echo ================================================================
 echo.
 
@@ -92,6 +92,11 @@ exit /b 1
 echo [OK] Python: %PYTHON_CMD%
 %PYTHON_CMD% --version
 echo.
+:: Read version dynamically from version.json
+for /f "delims=" %%v in ('%PYTHON_CMD% -c "import json; print(json.load(open('version.json')).get('version','unknown'))"') do set GA_VERSION=%%v
+echo    GenericAgent Web UI  v%GA_VERSION%
+echo.
+title GenericAgent v%GA_VERSION%
 
 :: ---- Step 2: Create virtual environment ----
 if exist ".venv\Scripts\python.exe" goto :venv_ok

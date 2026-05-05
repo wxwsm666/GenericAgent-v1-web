@@ -1,8 +1,16 @@
 """GenericAgent Web UI — Full-featured dashboard with 20 sections."""
 
-VERSION = "0.8.3"
+import os, json
 
-import os, sys, json, time, queue, threading, re, glob, platform, socket, subprocess, uuid, copy
+# Read version from version.json (single source of truth)
+_VERSION_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'version.json')
+try:
+    with open(_VERSION_FILE, 'r', encoding='utf-8') as _f:
+        VERSION = json.load(_f).get('version', '0.0.0')
+except Exception:
+    VERSION = '0.0.0'
+
+import sys, time, queue, threading, re, glob, platform, socket, subprocess, uuid, copy
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_dir = os.path.dirname(script_dir)

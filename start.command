@@ -14,7 +14,8 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC
 
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║   GenericAgent Web UI v0.8.1                             ║"
+VERSION=$(python3 -c "import json; print(json.load(open('$SCRIPT_DIR/version.json')).get('version','unknown'))" 2>/dev/null || echo "unknown")
+echo "║   GenericAgent Web UI v${VERSION}                             ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 

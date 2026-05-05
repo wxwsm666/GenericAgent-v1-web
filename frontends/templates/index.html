@@ -6,7 +6,7 @@
 <title>GenericAgent Web UI</title>
 <style>
 /* ══════════════════════════════════════════════════════════════
-   GenericAgent v0.8.0 — Glass Morphism Luxury UI
+   GenericAgent v{{ version }} — Glass Morphism Luxury UI
    ══════════════════════════════════════════════════════════════ */
 
 /* ── CSS Variables ── */
@@ -919,7 +919,7 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
     <span class="dot" id="dot"></span> GenericAgent
   </div>
   <div class="sb-nav" id="nav"></div>
-  <div style="padding:8px 20px;font-size:11px;color:var(--text3);border-top:1px solid var(--glass-border)">v0.8.0</div>
+  <div style="padding:8px 20px;font-size:11px;color:var(--text3);border-top:1px solid var(--glass-border)">v{{ version }}</div>
   <div class="sb-foot">
     <span id="stTxt" style="color:var(--text2)">空闲</span>
     <span style="color:var(--text3)">·</span>
@@ -3497,7 +3497,7 @@ async function exportBackup() {
       api('/groupchat/agents')
     ]);
     const backup = {
-      version: '0.8.0',
+      version: GA_VERSION,
       exported_at: new Date().toISOString(),
       sessions: sessions.sessions || [],
       groupchat_agents: agents.agents || [],
@@ -3570,7 +3570,7 @@ async function exportChatSessions() {
   try {
     const d = await api('/sessions/list');
     const exportData = {
-      version: '0.8.0',
+      version: GA_VERSION,
       type: 'chat_sessions',
       exported_at: new Date().toISOString(),
       sessions: d.sessions || []
