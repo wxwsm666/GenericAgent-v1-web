@@ -83,120 +83,101 @@
 
 ## 📦 安装指南
 
+> ⚠️ **重要提示**：本项目是独立安装包，**不需要**先装任何其他软件（包括原版 GenericAgent）。下载解压后双击启动脚本即可。
+
 ### Mac
 
-**第 1 步：安装 Python**
+**第 1 步：下载项目**
 
-打开「终端」（启动台搜索"终端"），粘贴运行：
+点击页面顶部绿色 **Code** → **Download ZIP**，解压到你想要的位置。
+
+---
+
+**第 2 步：双击启动**
+
+找到解压后的文件夹，双击 **`start.command`**。
+
+首次运行会自动完成：
+- ✅ 检查 Python 环境
+- ✅ 创建虚拟环境
+- ✅ 安装所有依赖包
+- ✅ 引导你配置 API Key
+
+> 如果提示无法打开，右键 `start.command` → 选择「打开」即可。
+
+---
+
+**第 3 步：配置 API Key**
+
+首次运行时如果没检测到 `mykey.py`，脚本会自动从模板创建并打开它。填入你的 API Key：
+
+```python
+oai_config = {
+    'apikey': 'sk-你的密钥',
+    'apibase': 'http://你的API地址:端口',
+    'model': '模型名称',
+}
+```
+
+保存后重新双击 `start.command` 启动。
+
+---
+
+**第 4 步：打开浏览器**
+
+启动成功后，浏览器访问：
+
+```
+http://localhost:18600
+```
+
+---
+
+<details>
+<summary>🔧 没有 Python？点这里看安装方法</summary>
+
+打开「终端」（启动台搜索"终端"）：
 
 ```bash
 brew install python
 ```
 
-> 如果提示 `brew: command not found`，先安装 Homebrew：
+> 如果提示 `brew: command not found`，先装 Homebrew：
 > ```bash
 > /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 > ```
 
-验证安装：
+验证：`python3 --version`
 
-```bash
-python3 --version
-```
+> ⚠️ 推荐 Python 3.11 / 3.12
 
-> ⚠️ 推荐 **Python 3.11 / 3.12**，不要用 3.14。
-
----
-
-**第 2 步：下载项目**
-
-```bash
-git clone https://github.com/wxwsm666/GenericAgent-v1-web.git
-cd GenericAgent-v1-web
-```
-
-> 不会用 git？打开上面仓库页面，点绿色 **Code** → **Download ZIP**，解压后进入文件夹。
-
----
-
-**第 3 步：安装依赖**
-
-```bash
-pip install requests streamlit pywebview
-```
-
----
-
-**第 4 步：配置 API Key**
-
-```bash
-cp mykey_template.py mykey.py
-```
-
-用文本编辑打开 `mykey.py`，填入你的 LLM API Key。最简配置：
-
-```python
-oai_config = {
-    'apikey': 'sk-你的密钥',
-    'apibase': 'http://你的API地址:端口',
-    'model': '模型名称',
-}
-```
-
-> 支持 Claude / GPT / Gemini / Kimi / MiniMax / DeepSeek，兼容 OpenAI 与 Anthropic 接口格式。
-
----
-
-**第 5 步：启动**
-
-```bash
-python3 launch.pyw
-```
-
-桌面会出现悬浮窗，直接输入任务即可。
+</details>
 
 ---
 
 ### Windows
 
-**第 1 步：安装 Python**
+**第 1 步：下载项目**
 
-1. 打开 [python.org/downloads](https://www.python.org/downloads/)，点击黄色按钮下载
-2. 运行安装包，**⚡ 一定要勾选底部「Add Python to PATH」**
-3. 点击「Install Now」
-
-验证安装：打开命令提示符（Win+R 输入 `cmd`），输入：
-
-```cmd
-python --version
-```
-
-> ⚠️ 推荐 **Python 3.11 / 3.12**，不要用 3.14。
+点击页面顶部绿色 **Code** → **Download ZIP**，解压到任意文件夹。
 
 ---
 
-**第 2 步：下载项目**
+**第 2 步：双击启动**
 
-```cmd
-git clone https://github.com/wxwsm666/GenericAgent-v1-web.git
-cd GenericAgent-v1-web
-```
+进到解压后的文件夹，双击 **`start.bat`**。
 
-> 不会用 git？打开仓库页面，点绿色 **Code** → **Download ZIP**，解压到你喜欢的文件夹。
-
----
-
-**第 3 步：安装依赖**
-
-```cmd
-pip install requests streamlit pywebview
-```
+首次运行会自动完成：
+- ✅ 检测 Python 环境（没有的话自动安装）
+- ✅ 创建虚拟环境
+- ✅ 安装所有依赖包
+- ✅ 引导你配置 API Key
 
 ---
 
-**第 4 步：配置 API Key**
+**第 3 步：配置 API Key**
 
-把 `mykey_template.py` 复制一份，重命名为 `mykey.py`。用记事本打开，填入 API Key：
+首次运行时如果没有 `mykey.py`，脚本会自动从模板创建并用记事本打开。填入你的 API Key：
 
 ```python
 oai_config = {
@@ -206,27 +187,47 @@ oai_config = {
 }
 ```
 
-> 支持 Claude / GPT / Gemini / Kimi / MiniMax / DeepSeek。
+保存后重新双击 `start.bat` 启动。
 
 ---
 
-**第 5 步：启动**
+**第 4 步：打开浏览器**
 
-```cmd
-python launch.pyw
+启动成功后，浏览器访问：
+
 ```
+http://localhost:18600
+```
+
+---
+
+<details>
+<summary>🔧 手动安装 Python（如果自动安装失败）</summary>
+
+1. 打开 [python.org/downloads](https://www.python.org/downloads/)
+2. 下载 Python 3.12，运行安装包
+3. **⚡ 一定要勾选底部「Add Python to PATH」**
+4. 验证：Win+R → `cmd` → `python --version`
+
+</details>
 
 ---
 
 ### 🧪 试运行第一个任务
 
-启动后在输入框里试试：
+浏览器打开 `http://localhost:18600`，在输入框试试：
 
 ```
 帮我在桌面创建一个 hello.txt，内容是 Hello World
 ```
 
 Agent 会自动执行，验证整条链路是否打通。
+
+---
+
+### 🔌 可选：安装 Chrome 浏览器扩展（解锁网页操控）
+
+双击 **`setup_extension.command`**（Mac）即可自动加载浏览器控制扩展，让 Agent 直接操控你的 Chrome 浏览器（保留登录态）。
 
 ---
 
