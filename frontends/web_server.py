@@ -967,6 +967,9 @@ def api_save_apikey():
         if content and not content.endswith('\n'):
             content += '\n'
         content += f'\n# ── 从 Web UI 配置 ──\n{new_block}\n'
+    # Auto-add update_source if missing (for users upgrading from old versions)
+    if not re.search(r'^update_source\s*=', content, re.MULTILINE):
+        content += "\n# ── 在线更新配置 ──\nupdate_source = 'https://raw.githubusercontent.com/wxwsm666/GenericAgent-v1-web/main/version.json'\nupdate_channel = 'stable'\n"
     # Write back
     with open(mykey_path, 'w', encoding='utf-8') as f:
         f.write(content)
@@ -1035,6 +1038,31 @@ def api_update_check():
         'is_git': is_git,
         'channel': channel,
     })
+
+@app.route('/api/update/fix-source', methods=['POST'])
+def api_update_fix_source():
+    """Auto-add update_source to mykey.py for users upgrading from old versions."""
+    mykey_path = os.path.join(project_dir, 'mykey.py')
+    if os.path.isfile(mykey_path):
+        with open(mykey_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    else:
+        content = ''
+    import re
+    if re.search(r'^update_source\s*=', content, re.MULTILINE):
+        return jsonify({'ok': True, 'message': 'update_source 已存在，无需修复'})
+    if content and not content.endswith('\n'):
+        content += '\n'
+    content += "\n# ── 在线更新配置 ──\nupdate_source = 'https://raw.githubusercontent.com/wxwsm666/GenericAgent-v1-web/main/version.json'\nupdate_channel = 'stable'\n"
+    with open(mykey_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    # Reload mykey module
+    try:
+        import mykey, importlib
+        importlib.reload(mykey)
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'message': 'update_source 已自动添加'})
 
 @app.route('/api/update/run', methods=['POST'])
 def api_update_run():

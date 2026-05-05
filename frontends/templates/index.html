@@ -3274,7 +3274,12 @@ async function checkUpdate(){
   st.innerHTML='<p style="font-size:13px;color:var(--orange)">⏳ 正在检查更新...</p>';
   try{
     const d=await api('/update/check');
-    if(!d.ok){st.innerHTML=`<p style="font-size:13px;color:var(--red)">❌ ${esc(d.error)}</p>`;return}
+    if(!d.ok){
+      const isSourceErr = d.error && d.error.includes('update_source');
+      st.innerHTML=`<p style="font-size:13px;color:var(--red)">❌ ${esc(d.error)}</p>`+
+        (isSourceErr?`<button class="btn acc" onclick="fixUpdateSource()" style="margin-top:6px">🔧 一键修复</button>`:'');
+      return;
+    }
     if(d.has_update){
       st.innerHTML=`<p style="font-size:13px;color:var(--green)">🆕 发现新版本: <strong>v${esc(d.latest)}</strong> (当前 v${esc(d.current)})</p>
         ${d.changelog?`<p style="font-size:12px;color:var(--text3);margin-top:4px">${esc(d.changelog)}</p>`:''}`;
@@ -3284,6 +3289,15 @@ async function checkUpdate(){
       document.getElementById('doUpdateBtn').style.display='none';
     }
   }catch(e){st.innerHTML=`<p style="font-size:13px;color:var(--red)">❌ 检查失败: ${esc(e.message)}</p>`}
+}
+async function fixUpdateSource(){
+  const st=document.getElementById('updateStatus');
+  st.innerHTML='<p style="font-size:13px;color:var(--orange)">⏳ 正在修复...</p>';
+  try{
+    const d=await apiPost('/update/fix-source');
+    if(d.ok){toast('✅ '+d.message,'ok');checkUpdate()}
+    else{st.innerHTML=`<p style="font-size:13px;color:var(--red)">❌ ${esc(d.error||d.message)}</p>`}
+  }catch(e){st.innerHTML=`<p style="font-size:13px;color:var(--red)">❌ 修复失败: ${esc(e.message)}</p>`}
 }
 
 async function doUpdate(){

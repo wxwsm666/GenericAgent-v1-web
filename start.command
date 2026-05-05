@@ -58,6 +58,18 @@ if [ ! -f "$SCRIPT_DIR/mykey.py" ]; then
     fi
 fi
 
+# ── 确保 update_source 存在（老用户自动修复）──
+if [ -f "$SCRIPT_DIR/mykey.py" ]; then
+    if ! grep -q '^update_source\s*=' "$SCRIPT_DIR/mykey.py"; then
+        echo -e "${YELLOW}🔧 检测到旧版 mykey.py，正在添加更新源配置...${NC}"
+        echo "" >> "$SCRIPT_DIR/mykey.py"
+        echo "# ── 在线更新配置 ──" >> "$SCRIPT_DIR/mykey.py"
+        echo "update_source = 'https://raw.githubusercontent.com/wxwsm666/GenericAgent-v1-web/main/version.json'" >> "$SCRIPT_DIR/mykey.py"
+        echo "update_channel = 'stable'" >> "$SCRIPT_DIR/mykey.py"
+        echo -e "${GREEN}✅ 更新源已自动添加${NC}"
+    fi
+fi
+
 # ── 端口冲突检测 ──
 PORT=18600
 # Kill any existing process on our port

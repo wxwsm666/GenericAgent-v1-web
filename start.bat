@@ -128,13 +128,25 @@ echo.
 :deps_ok
 
 :: ---- Step 4: Check mykey.py ----
-if exist "mykey.py" goto :launch
+if exist "mykey.py" goto :check_update_source
 
 if not exist "mykey_template.py" goto :no_template
 copy "mykey_template.py" "mykey.py" >nul
 echo [INFO] mykey.py created from template.
 echo   You can configure API Key in the web UI (Settings page).
 echo.
+
+:check_update_source
+:: Auto-add update_source for existing users upgrading from old versions
+findstr /R "^update_source" mykey.py >nul 2>&1
+if errorlevel 1 (
+    echo [INFO] Old mykey.py detected, adding update_source...
+    echo. >> mykey.py
+    echo # ── 在线更新配置 ── >> mykey.py
+    echo update_source = 'https://raw.githubusercontent.com/wxwsm666/GenericAgent-v1-web/main/version.json' >> mykey.py
+    echo update_channel = 'stable' >> mykey.py
+    echo [OK] update_source added.
+)
 
 :no_template
 :: Continue anyway - user can configure via web UI
