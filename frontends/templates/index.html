@@ -920,6 +920,10 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
   </div>
   <div class="sb-nav" id="nav"></div>
   <div style="padding:8px 20px;font-size:11px;color:var(--text3);border-top:1px solid var(--glass-border)">v{{ version }}</div>
+  <div style="padding:4px 16px;display:flex;gap:6px">
+    <button class="btn sm" onclick="doRestart()" title="重启服务" style="flex:1;font-size:11px;padding:6px 4px">🔄 重启</button>
+    <button class="btn sm" onclick="doStopServer()" title="停止服务" style="flex:1;font-size:11px;padding:6px 4px">⏹ 停止</button>
+  </div>
   <div class="sb-foot">
     <span id="stTxt" style="color:var(--text2)">空闲</span>
     <span style="color:var(--text3)">·</span>
@@ -3356,6 +3360,12 @@ async function doRestart(){
     try{const r=await fetch('/api/dashboard');if(r.ok){window.location.reload();return}}catch(e){}
   }
   st.innerHTML='<p style="font-size:13px;color:var(--red)">❌ 重启超时，请手动重启 start.bat / start.command</p>';
+}
+
+async function doStopServer(){
+  if(!confirm('确定停止服务？停止后需手动运行 start.command / start.bat 重新启动。'))return;
+  try{await apiPost('/update/stop')}catch(e){/* expected */}
+  document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px;color:var(--text);background:var(--bg)"><h2>🛑 服务已停止</h2><p style="color:var(--text2)">服务已安全停止。请双击 start.command (Mac) 或 start.bat (Windows) 重新启动。</p></div>`;
 }
 
 // ═══════════════ LANGUAGE ═══════════════

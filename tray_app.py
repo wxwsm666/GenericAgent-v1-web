@@ -84,17 +84,53 @@ if IS_MAC:
             super().__init__(name='GA', title='🧠', quit_button=None)
             self.idle_timer = rumps.Timer(self._idle_check, 300)
             self.idle_timer.start()
+            self._server_proc = None
             self._build_menu()
 
         def _build_menu(self):
             self.menu.clear()
             self.menu.add(rumps.MenuItem('打开 Web UI', callback=lambda _: webbrowser.open(WEB_URL)))
             self.menu.add(rumps.separator)
+            if is_server_running():
+                self.menu.add(rumps.MenuItem('🔄 重启服务', callback=self._restart_server))
+                self.menu.add(rumps.MenuItem('⏹ 停止服务', callback=self._stop_server))
+            else:
+                self.menu.add(rumps.MenuItem('▶ 启动服务', callback=self._start_server))
+            self.menu.add(rumps.separator)
             running = self.idle_timer.is_alive()
             self.idle_item = rumps.MenuItem(f'{"✅" if running else "⏸"} 空闲任务: {"开" if running else "关"}', callback=self._toggle_idle)
             self.menu.add(self.idle_item)
             self.menu.add(rumps.separator)
             self.menu.add(rumps.MenuItem('退出', callback=self._quit))
+
+        def _restart_server(self, _):
+            try:
+                import requests
+                requests.post(f'{WEB_URL}/api/update/restart', timeout=5)
+            except Exception:
+                pass
+            # Wait for new server to come up, then rebuild menu
+            def _wait():
+                time.sleep(2)
+                for _ in range(10):
+                    if is_server_running():
+                        break
+                    time.sleep(1)
+                self._build_menu()
+            threading.Thread(target=_wait, daemon=True).start()
+
+        def _stop_server(self, _):
+            try:
+                import requests
+                requests.post(f'{WEB_URL}/api/update/stop', timeout=5)
+            except Exception:
+                pass
+            time.sleep(0.5)
+            self._build_menu()
+
+        def _start_server(self, _):
+            ensure_server()
+            self._build_menu()
 
         def _toggle_idle(self, sender):
             if self.idle_timer.is_alive():
@@ -152,27 +188,56 @@ else:
             self._setup()
 
         def _setup(self):
-            label = f'空闲任务: {"开" if self.idle_enabled else "关"}'
-            menu = pystray.Menu(
+            menu_items = [
                 pystray.MenuItem('打开 Web UI', lambda: webbrowser.open(WEB_URL), default=True),
                 pystray.Menu.SEPARATOR,
-                pystray.MenuItem(label, self._toggle_idle),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem('退出', self._quit),
-            )
-            self.tray = pystray.Icon('GA', _make_icon(), 'GenericAgent', menu)
+            ]
+            if is_server_running():
+                menu_items.append(pystray.MenuItem('🔄 重启服务', self._restart_server))
+                menu_items.append(pystray.MenuItem('⏹ 停止服务', self._stop_server))
+            else:
+                menu_items.append(pystray.MenuItem('▶ 启动服务', self._start_server))
+            menu_items.append(pystray.Menu.SEPARATOR)
+            label = f'空闲任务: {"开" if self.idle_enabled else "关"}'
+            menu_items.append(pystray.MenuItem(label, self._toggle_idle))
+            menu_items.append(pystray.Menu.SEPARATOR)
+            menu_items.append(pystray.MenuItem('退出', self._quit))
+            self.tray = pystray.Icon('GA', _make_icon(), 'GenericAgent', pystray.Menu(*menu_items))
 
-        def _toggle_idle(self, icon, item):
+        def _rebuild_menu(self):
+            self._setup()
+
+        def _restart_server(self, icon=None, item=None):
+            try:
+                import requests
+                requests.post(f'{WEB_URL}/api/update/restart', timeout=5)
+            except Exception:
+                pass
+            def _wait():
+                time.sleep(2)
+                for _ in range(10):
+                    if is_server_running():
+                        break
+                    time.sleep(1)
+                self._rebuild_menu()
+            threading.Thread(target=_wait, daemon=True).start()
+
+        def _stop_server(self, icon=None, item=None):
+            try:
+                import requests
+                requests.post(f'{WEB_URL}/api/update/stop', timeout=5)
+            except Exception:
+                pass
+            time.sleep(0.5)
+            self._rebuild_menu()
+
+        def _start_server(self, icon=None, item=None):
+            ensure_server()
+            self._rebuild_menu()
+
+        def _toggle_idle(self, icon=None, item=None):
             self.idle_enabled = not self.idle_enabled
-            label = f'空闲任务: {"开" if self.idle_enabled else "关"}'
-            menu = pystray.Menu(
-                pystray.MenuItem('打开 Web UI', lambda: webbrowser.open(WEB_URL), default=True),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem(label, self._toggle_idle),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem('退出', self._quit),
-            )
-            self.tray.menu = menu
+            self._rebuild_menu()
 
         def _quit(self, icon=None, item=None):
             self.tray.stop()

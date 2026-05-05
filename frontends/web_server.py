@@ -1170,6 +1170,15 @@ def api_update_restart():
     threading.Thread(target=_restart, daemon=True).start()
     return jsonify({'ok': True, 'message': '重启中...'})
 
+@app.route('/api/update/stop', methods=['POST'])
+def api_update_stop():
+    """Stop the web server from tray or web UI."""
+    def _stop():
+        time.sleep(0.3)
+        os._exit(0)
+    threading.Thread(target=_stop, daemon=True).start()
+    return jsonify({'ok': True, 'message': '服务已停止'})
+
 def _get_port():
     """Best-effort extract current port number."""
     return int(os.environ.get('FLASK_PORT', 18600))
