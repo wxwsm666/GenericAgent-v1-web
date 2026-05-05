@@ -283,14 +283,17 @@ def api_custom_models_test(mid):
     if not model:
         return jsonify({'error': 'model not found'}), 404
     try:
-        import urllib.request, urllib.error
+        import urllib.request, urllib.error, ssl
         base = model['api_base'].rstrip('/')
         url = base + ('/v1/models' if '/v1' not in base else '/models')
         req = urllib.request.Request(url)
         req.add_header('Authorization', f'Bearer {model["api_key"]}')
         req.add_header('Content-Type', 'application/json')
         start = time.time()
-        resp = urllib.request.urlopen(req, timeout=10)
+        try:
+            resp = urllib.request.urlopen(req, timeout=10, context=ssl.create_default_context())
+        except Exception:
+            resp = urllib.request.urlopen(req, timeout=10, context=ssl._create_unverified_context())
         latency_ms = int((time.time() - start) * 1000)
         body = resp.read().decode('utf-8', errors='ignore')
         return jsonify({'ok': True, 'status_code': resp.status, 'latency_ms': latency_ms, 'body_preview': body[:200]})
@@ -926,6 +929,14 @@ def api_settings():
     return jsonify(config)
 
 # ──────────── Online Update ────────────
+def _urlopen_ssl(url, timeout=10):
+    """Open URL with SSL, falling back to unverified context on macOS."""
+    import urllib.request, ssl
+    req = urllib.request.Request(url)
+    try:
+        return urllib.request.urlopen(req, timeout=timeout, context=ssl.create_default_context())
+    except Exception:
+        return urllib.request.urlopen(req, timeout=timeout, context=ssl._create_unverified_context())
 def _get_update_source():
     """Read update_source from mykey.py if configured."""
     try:
@@ -941,9 +952,7 @@ def api_update_check():
     if not update_url:
         return jsonify({'ok': False, 'error': '未配置更新源。请在 mykey.py 中设置 update_source'})
     try:
-        import urllib.request
-        req = urllib.request.Request(update_url)
-        resp = urllib.request.urlopen(req, timeout=10)
+        resp = _urlopen_ssl(update_url)
         info = json.loads(resp.read().decode('utf-8'))
     except Exception as e:
         return jsonify({'ok': False, 'error': f'获取更新信息失败: {str(e)}'})
@@ -980,9 +989,7 @@ def api_update_run():
         return jsonify({'ok': False, 'error': '未配置更新源'})
     # Step 1: Get the latest version info
     try:
-        import urllib.request
-        req = urllib.request.Request(update_url)
-        resp = urllib.request.urlopen(req, timeout=10)
+        resp = _urlopen_ssl(update_url)
         info = json.loads(resp.read().decode('utf-8'))
     except Exception as e:
         return jsonify({'ok': False, 'error': f'获取更新信息失败: {str(e)}'})
