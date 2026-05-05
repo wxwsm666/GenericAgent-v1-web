@@ -447,7 +447,8 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
 .msg .ts{font-size:11px;color:var(--text3);margin-top:4px}
 
 /* Quote / Reply */
-.msg .quote-btn{display:none;font-size:11px;cursor:pointer;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:6px;padding:2px 8px;margin-left:6px;color:var(--text2);transition:all .15s}
+.msg-body{position:relative}
+.msg .quote-btn{display:none;position:absolute;right:6px;bottom:4px;font-size:11px;cursor:pointer;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:6px;padding:2px 6px;color:var(--text2);transition:all .15s}
 .msg:hover .quote-btn{display:inline-block}
 .msg .quote-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
 .quote-card{display:flex;align-items:center;gap:8px;padding:8px 12px;margin:0 10px 6px;background:var(--glass-bg-strong);border:1px solid var(--accent);border-radius:10px;font-size:12px}
@@ -912,12 +913,33 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
 @keyframes petBlink{0%,96%,100%{transform:scaleY(1)}98%{transform:scaleY(.1)}}
 @keyframes petThink{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
 @keyframes petThinkEyes{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+/* work & tool animations */
+@keyframes petWorkPulse{0%,100%{box-shadow:0 8px 24px var(--pet-glow)}50%{box-shadow:0 8px 36px var(--accent-glow),0 0 60px var(--pet-glow)}}
+@keyframes petWorkBounce{0%,100%{transform:translateY(0)}30%{transform:translateY(-12px)}60%{transform:translateY(-4px)}}
+@keyframes petToolSpin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+#deskPet.working .pet-face{animation:petWorkBounce .8s ease-in-out infinite,petWorkPulse 1.5s ease-in-out infinite}
+#deskPet.working .pet-eyes{animation:petThinkEyes .4s ease-in-out infinite}
+.pet-work-icon{position:absolute;top:-18px;right:-8px;font-size:18px;animation:petWorkBounce .8s ease-in-out infinite;display:none;z-index:1}
+#deskPet.working .pet-work-icon{display:block}
+.pet-work-icon.spin{animation:petWorkBounce .8s ease-in-out infinite,petToolSpin 2s linear infinite}
+/* whip & food effects */
+@keyframes whipLash{0%{transform:translateX(0) rotate(0)}15%{transform:translateX(8px) rotate(-6deg)}30%{transform:translateX(-6px) rotate(5deg)}45%{transform:translateX(6px) rotate(-4deg)}60%{transform:translateX(-4px) rotate(3deg)}75%{transform:translateX(3px) rotate(-1deg)}100%{transform:translateX(0) rotate(0)}}
+#deskPet.whipped .pet-body{animation:whipLash .5s ease-out}
+#deskPet.whipped .pet-face{filter:brightness(1.3) saturate(1.3)}
+.pet-whip-mark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px;pointer-events:none;animation:whipMark .8s ease-out forwards;z-index:2}
+@keyframes whipMark{0%{opacity:1;transform:translate(-50%,-50%) scale(0.5)}50%{opacity:.8;transform:translate(-50%,-50%) scale(1.2)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.5) translateY(-20px)}}
+.pet-food{position:absolute;font-size:22px;pointer-events:none;animation:foodFall 1.2s ease-in forwards;z-index:2}
+@keyframes foodFall{0%{opacity:1;transform:translateY(-30px) rotate(0deg)}60%{opacity:1;transform:translateY(5px) rotate(180deg)}100%{opacity:0;transform:translateY(20px) rotate(360deg)}}
+.pet-v50{position:absolute;top:-30px;left:50%;transform:translateX(-50%);font-size:20px;font-weight:900;color:#ff4d4f;text-shadow:0 0 12px rgba(255,77,79,.6);pointer-events:none;animation:v50pop .6s ease-out forwards;white-space:nowrap;z-index:2}
+@keyframes v50pop{0%{opacity:0;transform:translateX(-50%) scale(.3)}40%{opacity:1;transform:translateX(-50%) scale(1.3)}100%{opacity:1;transform:translateX(-50%) scale(1) translateY(-24px)}}
+@keyframes popIn{0%{opacity:0;transform:translateX(-50%) scale(.4)}60%{opacity:1;transform:translateX(-50%) scale(1.2)}100%{opacity:1;transform:translateX(-50%) scale(1)}}
 </style>
 </head>
 <body>
 <!-- ═══════ Desktop Pet ═══════ -->
 <div id="deskPet" class="pet-type-0" style="bottom:80px;right:24px">
   <div class="pet-bubble" id="petBubble"></div>
+  <div class="pet-work-icon" id="petWorkIcon">🔧</div>
   <div class="pet-body">
     <div class="pet-ears"><div class="pet-ear left"></div><div class="pet-ear right"></div></div>
     <div class="pet-antler"><span></span><span></span></div>
@@ -998,6 +1020,34 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
 // ══════════════════════════════════════════════════════════════
 
 const GA_VERSION = '{{ version }}';
+
+// ── Provider presets (global, used by onboard wizard & settings page) ──
+window._apPresets={
+  openai:{base:'https://api.openai.com/v1',model:'gpt-4o'},
+  anthropic:{base:'https://api.anthropic.com',model:'claude-sonnet-4-20250514'},
+  minimax:{base:'https://api.minimaxi.com/anthropic',model:'MiniMax-M2.7'},
+  deepseek:{base:'https://api.deepseek.com',model:'deepseek-chat'},
+  zhipu:{base:'https://open.bigmodel.cn/api/paas/v4',model:'glm-4'},
+  moonshot:{base:'https://api.moonshot.cn/v1',model:'moonshot-v1-8k'},
+  qwen:{base:'https://dashscope.aliyuncs.com/compatible-mode/v1',model:'qwen-plus'},
+  baichuan:{base:'https://api.baichuan-ai.com/v1',model:'Baichuan4'},
+  yi:{base:'https://api.lingyiwanwu.com/v1',model:'yi-large'},
+  doubao:{base:'https://ark.cn-beijing.volces.com/api/v3',model:'doubao-pro-32k'},
+  xai:{base:'https://api.x.ai/v1',model:'grok-2'},
+  google:{base:'https://generativelanguage.googleapis.com/v1beta/openai',model:'gemini-2.0-flash'},
+  custom:{base:'',model:''}
+};
+
+// ── Provider select auto-fill (called after innerHTML in renderSettings) ──
+function _setupProviderSelect(){
+  const sel=document.getElementById('apSetupProv');
+  const base=document.getElementById('apSetupBase');
+  const model=document.getElementById('apSetupModel');
+  if(!sel||!base||!model)return;
+  function update(){const p=(window._apPresets||{})[sel.value];if(p){base.placeholder=p.base;model.placeholder=p.model}}
+  sel.addEventListener('change',update);
+  update();
+}
 
 // ── Theme ──
 const THEMES = ['dark','light'];
@@ -1220,13 +1270,6 @@ async function renderDashboard(){
           <button class="btn" onclick="goPage('settings')" style="font-size:12px">⚙️ 高级配置</button>
           <span id="obMsg" style="font-size:12px"></span>
         </div>
-        <script>
-        (function(){
-          const sel=document.getElementById('obProv');
-          if(!sel)return;
-          sel.addEventListener('change',function(){});
-        })();
-        <\/script>
       </div>`;
     }
     html+=`<div class="grid grid-4">
@@ -1252,12 +1295,12 @@ async function renderDashboard(){
     </div>
     <div class="card"><h3>💿 数据备份</h3>
       <div class="backup-actions">
-        <button class="btn grn" onclick="exportBackup()">📥 完整备份导出</button>
-        <button class="btn acc" onclick="importBackup()">📤 一键恢复导入</button>
+        <button class="btn grn" onclick="exportBackup()">📦 完整备份导出</button>
+        <button class="btn acc" onclick="importBackup()">🔄 一键恢复导入</button>
         <button class="btn" onclick="exportChatSessions()">💬 导出聊天记录</button>
-        <button class="btn" onclick="importChatSessions()">📥 导入聊天记录</button>
+        <button class="btn" onclick="importChatSessions()">📂 导入聊天记录</button>
       </div>
-      <p style="color:var(--text3);font-size:11px;margin-top:10px">备份包含所有会话记录、群聊Agent配置和应用设置。导入将恢复所有数据。</p>
+      <p style="color:var(--text3);font-size:11px;margin-top:10px">完整备份包含会话、群聊、技能、任务、记忆、自定义模型和界面设置。一键导入将恢复全部数据。</p>
     </div>
     <div class="card" id="updateBanner" style="display:none;border-color:var(--orange);background:var(--glass-bg-strong)">
       <h3>🔄 有新版本可用!</h3>
@@ -1496,50 +1539,22 @@ function buildMsgEl(m, idx){
   const content=m.content||'';
   d.dataset.msgIdx = idx;
   d.dataset.msgRole = role;
-  d.innerHTML=`<div class="av">${role==='user'?'👤':'🤖'}</div><div><div class="bub">${fmtContent(content)}<button class="quote-btn" onclick="event.stopPropagation();setQuoteIdx('${role}',${idx})">💬 引用</button></div><div class="ts">${m.ts||''}</div></div>`;
+  const timeStr = m.ts ? new Date(m.ts*1000).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}) : '';
+  d.innerHTML=`<div class="av">${role==='user'?'👤':'🤖'}</div><div class="msg-body"><div class="bub">${fmtContent(content)}</div><div class="ts">${timeStr}</div></div>`;
+  if(idx!==undefined){
+    const btn=document.createElement('button');btn.className='quote-btn';btn.textContent='💬';
+    btn.onclick=function(e){e.stopPropagation();setQuoteIdx(role,idx);};
+    d.querySelector('.msg-body').appendChild(btn);
+  }
   return d;
 }
 function appendMsgEl(role,content,ts,targetId){
   const elId = targetId || 'msgs0';
   const el=document.getElementById(elId);if(!el)return null;
-  if(!el.querySelector('.fold-all-bar')){
-    const bar=document.createElement('div');bar.className='fold-all-bar';
-    bar.innerHTML=`<button onclick="foldAllRounds('${elId}')">📁 全部折叠</button><button onclick="expandAllRounds('${elId}')">📂 全部展开</button>`;
-    el.insertBefore(bar, el.firstChild);
-  }
-  if(role==='user'){
-    const paneIdx = elId.startsWith('msgs') ? parseInt(elId.replace('msgs',''))||0 : 0;
-    const sid = paneIdx > 0 && _paneSids[paneIdx-1] ? _paneSids[paneIdx-1] : activeSid;
-    const msgs = chatMsgs[sid]||[];
-    const foldId = 'fold-round-'+sid+'-'+msgs.length;
-    const folder = document.createElement('div');
-    folder.className = 'round-fold open'; folder.id = foldId;
-    const preview = (content||'').substring(0,60);
-    folder.innerHTML = `<div class="round-fold-header" onclick="toggleRound('${foldId}','${sid}')">
-      <span class="round-fold-arrow">▶</span>
-      <span class="round-fold-preview">${esc(preview)||'(空)'}</span>
-      <span class="round-fold-meta">${ts||new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}</span>
-    </div><div class="round-fold-body"></div>`;
-    folder.querySelector('.round-fold-body').appendChild(buildMsgEl({role,content,ts}));
-    el.appendChild(folder);
-    scrollChat(targetId);
-    return folder;
-  }else{
-    const lastRound = el.querySelector('.round-fold:last-child');
-    if(lastRound){
-      const body = lastRound.querySelector('.round-fold-body');
-      if(body){
-        const msgEl = buildMsgEl({role,content,ts});
-        body.appendChild(msgEl);
-        scrollChat(targetId);
-        return msgEl;
-      }
-    }
-    const msgEl = buildMsgEl({role,content,ts});
-    el.appendChild(msgEl);
-    scrollChat(targetId);
-    return msgEl;
-  }
+  const msgEl = buildMsgEl({role,content,ts});
+  el.appendChild(msgEl);
+  scrollChat(targetId);
+  return msgEl;
 }
 function appendMsg(role,content,ts,targetId){
   const paneIdx = targetId && targetId.startsWith('msgs') ? parseInt(targetId.replace('msgs',''))||0 : 0;
@@ -2813,14 +2828,34 @@ async function renderModels(){
   try{modelsData=await api('/models/merged')}catch(e){modelsData={builtin:[],custom:[],all:[]}}
   let h='';
   // Preset models
-  h+=`<div class="card"><div class="flex-between mb"><h3>⚡ 预设模型 (mykey.py)</h3><span class="tag">${modelsData.builtin.length} 个</span></div>`;
+  const anyUnvalidated=modelsData.builtin.some(m=>m.validated===null||m.validated===undefined);
+  h+=`<div class="card"><div class="flex-between mb"><h3>⚡ 预设模型 (mykey.py)</h3><div class="row" style="gap:8px"><span class="tag">${modelsData.builtin.length} 个</span>`;
+  if(anyUnvalidated) h+=`<button class="btn sm ghost" onclick="validateAllModels()">🔍 验证全部 API Key</button>`;
+  h+=`</div></div>`;
   if(!modelsData.builtin.length) h+='<p style="color:var(--text2)">暂无预设模型，请在 mykey.py 中配置</p>';
   else{
-    h+='<table><tr><th>#</th><th>名称</th><th>模型</th><th>类型</th><th>状态</th><th>操作</th></tr>';
+    h+='<table><tr><th>#</th><th>名称</th><th>模型</th><th>类型</th><th>验证</th><th>状态</th><th>操作</th></tr>';
     modelsData.builtin.forEach(m=>{
+      // Validation status badge
+      let valBadge='';
+      if(m.validated===true) valBadge='<span style="color:var(--green)" title="API Key 有效 · 延迟 '+m.latency_ms+'ms">✅ 已验证</span>';
+      else if(m.validated===false) valBadge=`<span style="color:var(--red)" title="${esc(m.validation_error||'')}">❌ 无效</span>`;
+      else valBadge='<span style="color:var(--text3)">⏳ 未验证</span>';
+
+      // Switch button: disabled if validation failed
+      let switchBtn='-';
+      if(!m.active){
+        if(m.validated===false){
+          switchBtn=`<button class="btn sm ghost" disabled style="opacity:.4" title="${esc(m.validation_error||'API Key 无效')}">不可用</button>`;
+        }else{
+          switchBtn=`<button class="btn acc sm" onclick="switchLLM(${m.index})">切换</button>`;
+        }
+      }
+
       h+=`<tr><td>${m.index}</td><td>${esc(m.name)}</td><td>${esc(m.model||'-')}</td><td><span class="tag">${esc(m.type||'-')}</span></td>
+        <td>${valBadge}</td>
         <td><span class="tag ${m.active?'on':'off'}">${m.active?'当前':'可用'}</span></td>
-        <td>${m.active?'-':`<button class="btn acc sm" onclick="switchLLM(${m.index})">切换</button>`}</td></tr>`;
+        <td>${switchBtn}</td></tr>`;
     });
     h+='</table>';
   }
@@ -2902,6 +2937,19 @@ async function testModelConnection(id){
   }catch(e){el.innerHTML=`<div class="card"><p style="color:var(--red)">❌ 测试失败: ${esc(e.message)}</p></div>`}
 }
 async function switchLLM(i){await apiPost('/switch_llm',{index:i});toast('模型已切换','ok');refreshStatus();setTimeout(()=>renderModels(),500)}
+async function validateAllModels(){
+  toast('⏳ 正在验证 API Key...','ok');
+  try{
+    const r=await apiPost('/models/validate-all');
+    if(r.ok){
+      const results=r.results||{};
+      const pass=Object.values(results).filter(v=>v.valid===true).length;
+      const fail=Object.values(results).filter(v=>v.valid===false).length;
+      toast(`验证完成: ${pass} 通过, ${fail} 失败`,'ok');
+    }
+  }catch(e){toast('验证失败: '+e.message,'err')}
+  renderModels();
+}
 async function saveModelParams(){
   const params={};
   ['model','max_tokens','temperature','top_p','connect_timeout','read_timeout','max_retries','thinking_type'].forEach(k=>{
@@ -3243,36 +3291,14 @@ async function renderSettings(){
     </div>
     <div id="apSetupMsg" style="margin-top:8px;font-size:12px"></div>
   </div>`;
-  // ── Provider presets ──
-  h+=`<script>
-  window._apPresets={
-    openai:{base:'https://api.openai.com/v1',model:'gpt-4o'},
-    anthropic:{base:'https://api.anthropic.com',model:'claude-sonnet-4-20250514'},
-    minimax:{base:'https://api.minimaxi.com/anthropic',model:'MiniMax-M2.7'},
-    deepseek:{base:'https://api.deepseek.com',model:'deepseek-chat'},
-    zhipu:{base:'https://open.bigmodel.cn/api/paas/v4',model:'glm-4'},
-    moonshot:{base:'https://api.moonshot.cn/v1',model:'moonshot-v1-8k'},
-    qwen:{base:'https://dashscope.aliyuncs.com/compatible-mode/v1',model:'qwen-plus'},
-    baichuan:{base:'https://api.baichuan-ai.com/v1',model:'Baichuan4'},
-    yi:{base:'https://api.lingyiwanwu.com/v1',model:'yi-large'},
-    doubao:{base:'https://ark.cn-beijing.volces.com/api/v3',model:'doubao-pro-32k'},
-    xai:{base:'https://api.x.ai/v1',model:'grok-2'},
-    google:{base:'https://generativelanguage.googleapis.com/v1beta/openai',model:'gemini-2.0-flash'},
-    custom:{base:'',model:''}
-  };
-  (function(){
-    const sel=document.getElementById('apSetupProv');
-    const base=document.getElementById('apSetupBase');
-    const model=document.getElementById('apSetupModel');
-    if(!sel||!base||!model)return;
-    function update(){const p=window._apPresets[sel.value];if(p){base.placeholder=p.base;model.placeholder=p.model}}
-    sel.addEventListener('change',update);
-    update();
-  })();
-  </`+`script>`;
-  h+=`<div class="card"><h3>🐾 桌面宠物</h3>
+    h+=`<div class="card"><h3>🐾 桌面宠物</h3>
     <div class="row" style="gap:8px;flex-wrap:wrap" id="petPicker"></div>
-    <p style="font-size:12px;color:var(--text3);margin-top:8px">选择宠物样式 · 拖拽移动 · 点击互动 · 自动显示工作状态</p></div>
+    <p style="font-size:12px;color:var(--text3);margin-top:8px">选择宠物样式 · 拖拽移动 · 点击互动 · 自动显示工作状态</p>
+    <div class="row" style="gap:6px;margin-top:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:12px;color:var(--text2)">⏰ 早报时间:</span>
+      <input type="time" id="newsTimeInput" style="width:auto;padding:6px 10px;font-size:12px" onchange="_onNewsTimeChange(this.value)">
+
+    </div></div>
     <div class="card"><h3>🔤 字体大小</h3>
     <div class="row" style="gap:8px">
       ${['s','m','l','xl'].map(sz=>`<button class="btn ${curFont===sz?'acc':''}" onclick="setFontSize('${sz}');renderSettings()">${fontLabels[sz]}</button>`).join('')}
@@ -3280,12 +3306,12 @@ async function renderSettings(){
     <p style="font-size:12px;color:var(--text3);margin-top:8px">当前: ${fontLabels[curFont]||'中'} · 预览: <span style="font-size:calc(14px * ${FONT_SCALES[curFont]||1})">Aa 你好</span></p></div>`;
   h+=`<div class="card"><h3>💿 数据备份与恢复</h3>
     <div class="backup-actions">
-      <button class="btn grn" onclick="exportBackup()">📥 完整备份导出</button>
-      <button class="btn acc" onclick="importBackup()">📤 一键恢复导入</button>
+      <button class="btn grn" onclick="exportBackup()">📦 完整备份导出</button>
+      <button class="btn acc" onclick="importBackup()">🔄 一键恢复导入</button>
       <button class="btn" onclick="exportChatSessions()">💬 导出聊天记录</button>
-      <button class="btn" onclick="importChatSessions()">📥 导入聊天记录</button>
+      <button class="btn" onclick="importChatSessions()">📂 导入聊天记录</button>
     </div>
-    <p style="color:var(--text3);font-size:11px;margin-top:10px">备份包含所有会话记录、群聊Agent配置和应用设置。导入将恢复所有数据。</p></div>`;
+    <p style="color:var(--text3);font-size:11px;margin-top:10px">完整备份包含会话、群聊、技能、任务、记忆、自定义模型和界面设置。一键导入将恢复全部数据。</p></div>`;
   h+=`<div class="card"><h3>🔄 在线更新</h3>
     <div id="updateStatus"><p style="font-size:13px;color:var(--text2)">当前版本: <strong style="color:var(--accent)">v${esc(GA_VERSION)}</strong></p></div>
     <div class="row" style="gap:8px;margin-top:8px">
@@ -3294,6 +3320,7 @@ async function renderSettings(){
     </div></div>`;
   if(mk.content){h+=`<div class="card"><h3>📝 mykey.py 配置 (密钥已脱敏)</h3><textarea id="mkcontent" rows="20">${esc(mk.content)}</textarea><div class="row mt"><button class="btn acc" onclick="saveMyKey()">💾 保存配置</button><span style="font-size:11px;color:var(--red)">⚠ 修改后需重启生效</span></div></div>`}
   C.innerHTML=h;
+  _setupProviderSelect();
   // Populate pet picker
   const picker=document.getElementById('petPicker');
   if(picker&&window.getPetNames){
@@ -3301,13 +3328,15 @@ async function renderSettings(){
     const cur=window.getPetType?window.getPetType():0;
     picker.innerHTML=names.map((n,i)=>`<button class="btn sm ${cur===i?'acc':''}" onclick="window.setPetType(${i});renderSettings()">${icons[i]} ${n}</button>`).join('');
   }
+  const nti=document.getElementById('newsTimeInput');
+  if(nti&&window.getNewsTime)nti.value=window.getNewsTime();
 }
 async function saveApiKeySimple(){
   const prov=document.getElementById('apSetupProv').value;
   const key=document.getElementById('apSetupKey').value.trim();
   let base=document.getElementById('apSetupBase').value.trim();
   let model=document.getElementById('apSetupModel').value.trim();
-  const p=window._apPresets[prov]||{};
+  const p=(window._apPresets||{})[prov]||{};
   if(!base)base=p.base||'';
   if(!model)model=p.model||'gpt-4o';
   if(!key){document.getElementById('apSetupMsg').innerHTML='<span style="color:var(--red)">❌ 请输入 API Key</span>';return}
@@ -3397,7 +3426,7 @@ async function saveOnboardKey(){
     const d=await apiPost('/settings/apikey',{provider:prov,api_key:key,api_base:base,model:model});
     if(d.ok){
       msg.innerHTML='<span style="color:var(--green)">✅ 配置已保存！正在重启服务...</span>';
-      setTimeout(async()=>{try{await apiPost('/system/restart',{})}catch(e){}setTimeout(()=>{location.reload()},2000)},1000);
+      setTimeout(async()=>{try{await apiPost('/update/restart',{})}catch(e){}setTimeout(()=>{location.reload()},2000)},1000);
     }else{
       msg.innerHTML='<span style="color:var(--red)">❌ '+esc(d.error||'保存失败')+'</span>';
     }
@@ -3423,6 +3452,12 @@ async function doStopServer(){
   try{await apiPost('/update/stop')}catch(e){/* expected */}
   document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px;color:var(--text);background:var(--bg)"><h2>🛑 服务已停止</h2><p style="color:var(--text2)">服务已安全停止。请双击 start.command (Mac) 或 start.bat (Windows) 重新启动。</p></div>`;
 }
+
+// ── News time change callback ──
+function _onNewsTimeChange(t){
+  if(window.setNewsTime)window.setNewsTime(t);
+}
+
 
 // ═══════════════ LANGUAGE ═══════════════
 async function renderLanguage(){
@@ -3558,15 +3593,25 @@ async function downloadCurrentChat(targetId){
 }
 async function exportBackup() {
   try {
-    const [sessions, agents] = await Promise.all([
+    const [sessions, agents, skills, tasks, memory, customModels, lang] = await Promise.all([
       api('/sessions/list'),
-      api('/groupchat/agents')
+      api('/groupchat/agents'),
+      api('/skills').catch(()=>({skills:[]})),
+      api('/tasks').catch(()=>({tasks:[]})),
+      api('/memory').catch(()=>({memories:[]})),
+      api('/models/custom').catch(()=>({models:[]})),
+      api('/language').catch(()=>({language:'zh'}))
     ]);
     const backup = {
       version: GA_VERSION,
       exported_at: new Date().toISOString(),
       sessions: sessions.sessions || [],
       groupchat_agents: agents.agents || [],
+      skills: skills.skills || [],
+      tasks: tasks.tasks || [],
+      memory: memory.memories || [],
+      custom_models: customModels.models || [],
+      language: lang.language || 'zh',
       settings: {
         theme: localStorage.getItem('hermes-theme') || 'dark',
         font_size: localStorage.getItem('hermes-font-size') || 'm',
@@ -3581,7 +3626,7 @@ async function exportBackup() {
     a.download = `genericagent-backup-${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    toast('备份已导出', 'ok');
+    toast('✅ 完整备份已导出（会话+群聊+技能+任务+记忆+模型+设置）', 'ok');
   } catch(e) {
     toast('导出失败: ' + e.message, 'err');
   }
@@ -3599,16 +3644,48 @@ async function importBackup() {
       const backup = JSON.parse(text);
       if (!backup.version) { toast('无效的备份文件', 'err'); return; }
 
+      let restored = [];
+
+      // Restore sessions (chat history + working memory)
+      if (backup.sessions && backup.sessions.length) {
+        const d = await apiPost('/backup/restore', { sessions: backup.sessions });
+        if (d.restored) restored.push(`${d.restored} 个会话`);
+      }
+
       // Restore group chat agents
       if (backup.groupchat_agents && backup.groupchat_agents.length) {
         await apiPost('/groupchat/agents/save', { agents: backup.groupchat_agents });
         gcAgents = backup.groupchat_agents;
+        restored.push(`${backup.groupchat_agents.length} 个群聊Agent`);
       }
 
-      // Restore sessions
-      if (backup.sessions && backup.sessions.length) {
-        const d = await apiPost('/backup/restore', { sessions: backup.sessions });
-        if (d.restored) toast(`已恢复 ${d.restored} 个会话`, 'ok');
+      // Restore skills
+      if (backup.skills && backup.skills.length) {
+        await apiPost('/skills/save', { skills: backup.skills });
+        restored.push(`${backup.skills.length} 个技能`);
+      }
+
+      // Restore tasks
+      if (backup.tasks && backup.tasks.length) {
+        await apiPost('/tasks/restore', { tasks: backup.tasks }).catch(()=>{});
+        restored.push(`${backup.tasks.length} 个任务`);
+      }
+
+      // Restore memory
+      if (backup.memory && backup.memory.length) {
+        await apiPost('/memory/save', { memories: backup.memory }).catch(()=>{});
+        restored.push(`${backup.memory.length} 条记忆`);
+      }
+
+      // Restore custom models
+      if (backup.custom_models && backup.custom_models.length) {
+        await apiPost('/models/custom/restore', { models: backup.custom_models }).catch(()=>{});
+        restored.push(`${backup.custom_models.length} 个自定义模型`);
+      }
+
+      // Restore language
+      if (backup.language) {
+        await apiPost('/language', { language: backup.language }).catch(()=>{});
       }
 
       // Restore settings
@@ -3624,7 +3701,7 @@ async function importBackup() {
       if (cur === 'chat') { await loadSessions(); renderChatView(); }
       if (cur === 'groupchat') renderGroupchat();
       updateThemeBtn();
-      toast('备份恢复成功！', 'ok');
+      toast(`✅ 备份恢复成功！${restored.length ? ' ('+restored.join('、')+')' : ''}`, 'ok');
     } catch(e) {
       toast('导入失败: ' + e.message, 'err');
     }
@@ -3739,8 +3816,45 @@ function changeMood(delta){
 mood=parseInt(localStorage.getItem('hermes-pet-mood')||'50')||50;
 setInterval(()=>changeMood(-1),120000); // mood slowly decays
 
+// ── Bond / Evolution system ──
+const BOND_LEVELS=['🤍 陌生','💛 认识','🧡 朋友','❤️ 挚友','💝 灵魂伴侣'];
+const BOND_MSGS_BY_LV=[
+  // Level 0: stranger
+  ['你好呀~','初次见面~','请多关照！','(。-ω-)zzz'],
+  // Level 1: acquaintance
+  ['今天也要加油哦','我在看着你哟','有什么需要帮忙的吗？','又来了新消息吗？'],
+  // Level 2: friend
+  ['主人来啦！','棒棒的！','需要我帮忙吗？','我在这呢~'],
+  // Level 3: best friend
+  ['有我在呢！','嘿嘿，想我了吗？','今天的你也超棒！','一起加油吧！'],
+  // Level 4: soulmate
+  ['我懂你！','心有灵犀~','什么都不用说我明白','有你真好💕'],
+];
+let _bond={xp:0,level:0,feeds:0,plays:0,whips:0,sessions:0};
+try{
+  const saved=localStorage.getItem('hermes-pet-bond');
+  if(saved){const b=JSON.parse(saved);Object.assign(_bond,b)}
+}catch(e){}
+function _addBondXp(amt){
+  _bond.xp+=amt; _bond.sessions++;
+  const newLv=Math.min(4,Math.floor(_bond.xp/100));
+  if(newLv>_bond.level){
+    _bond.level=newLv;
+    say(BOND_LEVELS[newLv]+'！我们更亲密了！',3000);
+    spawnParticles('💖',8);
+  }
+  try{localStorage.setItem('hermes-pet-bond',JSON.stringify(_bond))}catch(e){}
+}
+function _getBondMsgs(){
+  const lvMsgs=BOND_MSGS_BY_LV[_bond.level]||BOND_MSGS_BY_LV[0];
+  return [...lvMsgs,...MSGS.slice(0,4)]; // mix with generic
+}
+// Expose bond info
+window.getPetBond=()=>({..._bond,levelName:BOND_LEVELS[_bond.level]});
+
 // ── Floating emoji particles ──
 function spawnParticles(emoji,count){
+  if(!petVisible)return;
   for(let i=0;i<count;i++){
     const p=document.createElement('span');
     p.textContent=emoji;p.style.cssText=`position:fixed;z-index:10000;font-size:16px;pointer-events:none;left:${pet.getBoundingClientRect().left+32}px;top:${pet.getBoundingClientRect().top}px;transition:all ${.6+Math.random()*.6}s ease-out;opacity:1`;
@@ -3754,9 +3868,12 @@ function spawnParticles(emoji,count){
 }
 
 // ── Feed ──
+let isFeeding=false;
 function feedPet(){
-  if(isPlaying)return;
+  if(isPlaying||isFeeding)return;
+  isFeeding=true;
   changeMood(20);
+  _bond.feeds++; _addBondXp(10);
   say(EAT_MSGS[Math.floor(Math.random()*EAT_MSGS.length)],2200);
   pet.style.transition='transform .12s';
   pet.style.transform='scale(1.15)';
@@ -3764,7 +3881,7 @@ function feedPet(){
   let chews=0;
   const chew=setInterval(()=>{
     pet.style.transform=chews%2?'scale(1.2)':'scale(1.05)';
-    if(++chews>5){clearInterval(chew);pet.style.transform='scale(1)';setTimeout(()=>pet.style.transition='',200)}
+    if(++chews>5){clearInterval(chew);pet.style.transform='scale(1)';setTimeout(()=>{pet.style.transition='';isFeeding=false},200)}
   },180);
   spawnParticles('❤️',5);
 }
@@ -3773,6 +3890,7 @@ function feedPet(){
 function playWithPet(){
   if(isPlaying)return;
   isPlaying=true;changeMood(25);
+  _bond.plays++; _addBondXp(15);
   say(PLAY_MSGS[Math.floor(Math.random()*PLAY_MSGS.length)],2000);
   spawnParticles('✨',8);
   // Rapid bouncing
@@ -3794,14 +3912,17 @@ pet.addEventListener('contextmenu',e=>{
   e.preventDefault();hideCtxMenu();
   ctxMenu=document.createElement('div');
   const moodEmoji=mood>80?'😄':mood>60?'😊':mood>40?'😐':mood>20?'😞':'😢';
+  const bondInfo=BOND_LEVELS[_bond.level]+' · xp:'+_bond.xp;
   ctxMenu.innerHTML=`
-    <div style="padding:6px 12px;font-size:11px;color:var(--text3);border-bottom:1px solid var(--glass-border)">${moodEmoji} 心情 ${mood}%</div>
+    <div style="padding:6px 12px;font-size:11px;color:var(--text3);border-bottom:1px solid var(--glass-border)">${moodEmoji} 心情 ${mood}% · ${bondInfo}</div>
     <div class="ctx-item" id="ctx-feed">🍖 喂食 (+20)</div>
     <div class="ctx-item" id="ctx-play">🎾 玩耍 (+25)</div>
     <div class="ctx-item" id="ctx-type">🔄 换装</div>
-    <div class="ctx-item" id="ctx-hide">${petVisible?'🙈 隐藏':'👀 显示'}</div>`;
+    <div class="ctx-item" id="ctx-hide">${petVisible?'🙈 隐藏':'👀 显示'}</div>
+`;
   ctxMenu.style.cssText='position:fixed;z-index:10001;background:var(--glass-bg);backdrop-filter:blur(16px);border:1px solid var(--glass-border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.2);min-width:130px;overflow:hidden';
-  ctxMenu.style.left=e.clientX+'px';ctxMenu.style.top=e.clientY+'px';
+  const pr=pet.getBoundingClientRect();
+  ctxMenu.style.left=pr.left+'px';ctxMenu.style.top=(pr.top-8)+'px';
   document.body.appendChild(ctxMenu);
   document.getElementById('ctx-feed').onclick=()=>{feedPet();hideCtxMenu()};
   document.getElementById('ctx-play').onclick=()=>{playWithPet();hideCtxMenu()};
@@ -3814,6 +3935,7 @@ pet.addEventListener('contextmenu',e=>{
     hideCtxMenu();
   };
   document.getElementById('ctx-hide').onclick=()=>{window.togglePet();hideCtxMenu()};
+
   setTimeout(()=>document.addEventListener('click',hideCtxMenu,{once:true}),100);
 });
 
@@ -3823,12 +3945,22 @@ async function updatePetStatus(){
   try{
     const r=await fetch('/api/status');const d=await r.json();
     if(d.running){
-      pet.classList.add('thinking');
-      statusEl.textContent='⚡ 工作中...';
+      pet.classList.add('thinking','working');
+      // Rotate work icons for visual variety
+      const icons=['🔧','🔍','📝','💻','⚙️','🔨','📡','🧩'];
+      const iconEl=document.getElementById('petWorkIcon');
+      if(iconEl){
+        const idx=Math.floor(Date.now()/3000)%icons.length;
+        iconEl.textContent=icons[idx];
+        if(icons[idx]==='⚙️'||icons[idx]==='🔍')iconEl.classList.add('spin');
+        else iconEl.classList.remove('spin');
+      }
+      const msgs=['🤔 思考中...','🔧 执行工具...','📝 处理中...','💻 工作中...','⚡ 全力运算...'];
+      statusEl.textContent=msgs[Math.floor(Date.now()/5000)%msgs.length];
       statusEl.classList.add('show');
       wasRunning=true;
     }else{
-      pet.classList.remove('thinking');
+      pet.classList.remove('thinking','working');
       if(wasRunning){
         changeMood(5);
         spawnParticles('🎉',6);
@@ -3844,47 +3976,149 @@ async function updatePetStatus(){
 }
 updatePetStatus();setInterval(updatePetStatus,8000);
 
-// ── Drag ──
-let _dragMoved=false;
+// ── Drag (using right/bottom, no left/top switch) ──
+let _dragMoved=false, _dragStartMX=0, _dragStartMY=0;
+let _dragStartRight=0, _dragStartBottom=0;
 pet.addEventListener('mousedown',e=>{
   if(e.button!==0)return;
   const r=pet.getBoundingClientRect();
   isDrag=true; _dragMoved=false;
-  dragOffX=e.clientX-r.left; dragOffY=e.clientY-r.top;
+  _dragStartMX = e.clientX;
+  _dragStartMY = e.clientY;
+  _dragStartRight = window.innerWidth - r.right;
+  _dragStartBottom = window.innerHeight - r.bottom;
   e.preventDefault();
 });
 document.addEventListener('mousemove',e=>{
   if(!isDrag)return;
-  const nx=e.clientX-dragOffX, ny=e.clientY-dragOffY;
+  const dx=e.clientX-_dragStartMX, dy=e.clientY-_dragStartMY;
   if(!_dragMoved){
-    if(Math.abs(nx-pet.getBoundingClientRect().left)<4 && Math.abs(ny-pet.getBoundingClientRect().top)<4)return;
-    _dragMoved=true;
-    pet.classList.add('dragging');
-    pet.style.right='auto'; pet.style.bottom='auto';
+    if(Math.abs(dx)<4 && Math.abs(dy)<4)return;
+    _dragMoved=true; pet.classList.add('dragging');
   }
-  pet.style.left=nx+'px'; pet.style.top=ny+'px';
+  // Moving right decreases right, moving down decreases bottom
+  pet.style.right = (_dragStartRight - dx) + 'px';
+  pet.style.bottom = (_dragStartBottom - dy) + 'px';
 });
 document.addEventListener('mouseup',()=>{
   if(!isDrag)return;
   isDrag=false; pet.classList.remove('dragging');
 });
 
-// ── Click interact ──
+// ── Click interact (multi-click: single=expression, double=feed, rapid=whip, 5=V50) ──
+let _clickCount=0, _clickTimer=null, _clickFirst=0;
 pet.addEventListener('click',e=>{
   if(_dragMoved){_dragMoved=false;return;}
-  changeMood(3);
-  say(MSGS[Math.floor(Math.random()*MSGS.length)]);
-  pet.style.transition='transform .15s';
-  pet.style.transform='scale(1.25)';
-  setTimeout(()=>{pet.style.transform='scale(1)';setTimeout(()=>pet.style.transition='',200)},150);
-  spawnParticles('💬',2);
+  if(!petVisible)return;
+  const now=Date.now();
+  if(!_clickCount) _clickFirst=now;
+  _clickCount++;
+  if(_clickTimer){clearTimeout(_clickTimer);_clickTimer=null;}
+  if(_clickCount>=5){
+    _clickCount=0;_clickFirst=0;
+    // V50 meme
+    const m=document.createElement('div');
+    m.className='pet-v50';m.textContent='V我50！';
+    pet.appendChild(m);setTimeout(()=>m.remove(),800);
+    say('疯狂星期四！V我50！',2500);
+    spawnParticles('🍗',10);
+    return;
+  }
+  _clickTimer=setTimeout(()=>{
+    const elapsed=now-_clickFirst, count=_clickCount;
+    _clickCount=0;_clickFirst=0;
+    if(count===2 && elapsed<350){
+      // Double click = feed
+      feedPet();
+    }else if(count>=3 && elapsed<900){
+      // Rapid click = whip (speed up agent)
+      pet.classList.add('whipped');
+      setTimeout(()=>pet.classList.remove('whipped'),500);
+      say('嗷呜！别打了别打了~ 我会更努力的！',2000);
+      _bond.whips++; _addBondXp(5);
+      spawnParticles('💨',6);
+      // Trigger idle check to speed up background tasks
+      try{fetch('/api/idle/run_checklist',{method:'POST'})}catch(e){}
+    }else{
+      // Single click = expression
+      changeMood(3);
+      const msgs=_getBondMsgs();
+      say(msgs[Math.floor(Math.random()*msgs.length)]);
+      spawnParticles('💬',2);
+    }
+  },320);
 });
 
-// ── Idle random say ──
+// ── Douyin meme idle scrolling ──
+const DOUYIN_MEMES=[
+  '🤔 这个需求不太行…','💡 我有个想法！','📱 刷会儿抖音…','🔥 这个好火！',
+  '🎵 科目三来一段？','🐴 马看到什么，是ruen决定的','🤣 笑不活了','🤷 啊对对对~',
+  '💃 都在跳这个','🍉 吃瓜前线','🤌 你没事吧~','🎬 这个好上头','🚩 立个flag',
+  '🤖 AI说这样不行','😱 还有这种操作','💪 卷起来了','🤪 精神状态美丽',
+  '🫠 i人狂喜','🤯 这知识不进脑子','🫡 收到，马上执行','🎯 精准捕捉',
+];
+let _douyinIdx=0;
+function _sayRandomDouyin(){
+  if(!petVisible||pet.classList.contains('thinking')||isPlaying)return;
+  if(Math.random()<.12){
+    _douyinIdx=(_douyinIdx+Math.floor(Math.random()*(DOUYIN_MEMES.length-1))+1)%DOUYIN_MEMES.length;
+    say(DOUYIN_MEMES[_douyinIdx],3500);
+  }
+}
+// Mix douyin into random idle (every 25s, 12% chance)
+setInterval(_sayRandomDouyin,25000);
+
+// ── Idle random say (mix with douyin, reduced chance) ──
 setInterval(()=>{
   if(!petVisible||pet.classList.contains('thinking')||isPlaying)return;
-  if(Math.random()<.10) say(MSGS[Math.floor(Math.random()*MSGS.length)]);
-},20000);
+  if(Math.random()<.08){
+    const bmsgs=_getBondMsgs();
+    say(bmsgs[Math.floor(Math.random()*bmsgs.length)]);
+  }
+},30000);
+
+// ── Morning news ──
+let _newsTime='08:00';
+let _lastNewsDate='';
+function _checkMorningNews(){
+  const d=new Date();
+  const today=d.toISOString().slice(0,10);
+  const hm=d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
+  const [th,tm]=_newsTime.split(':').map(Number);
+  if(today===_lastNewsDate)return;
+  if(d.getHours()!==th||Math.abs(d.getMinutes()-tm)>2)return;
+  _lastNewsDate=today;
+  say('☀️ 早上好！为你播报今日快讯…',4000);
+  // Try to get headlines from a simple fetch
+  setTimeout(async ()=>{
+    try{
+      const r=await fetch('https://news.ycombinator.com/newest');
+      if(r.ok){
+        const txt=await r.text();
+        const titles=[...txt.matchAll(/class="titleline"><a[^>]*>([^<]+)</g)].slice(0,5);
+        if(titles.length){
+          const headlines=titles.map((m,i)=>`${i+1}. ${m[1]}`).join(' · ');
+          say('📰 '+headlines,8000);
+        }else{
+          say('📰 今日适宜：专注工作，善用AI助手~',4000);
+        }
+      }
+    }catch(e){
+      say('📰 今日适宜：专注工作，善用AI助手~',4000);
+    }
+  },4500);
+}
+setInterval(_checkMorningNews,60000);
+_checkMorningNews();
+// Store news time setting
+window.setNewsTime=function(t){
+  _newsTime=t;
+  _lastNewsDate=''; // allow re-trigger today
+  localStorage.setItem('hermes-news-time',t);
+  say('⏰ 早报时间设为 '+t,2000);
+};
+window.getNewsTime=()=>_newsTime;
+try{const st=localStorage.getItem('hermes-news-time');if(st)_newsTime=st}catch(e){}
 
 // ── Sleepy at night ──
 function updateSleepy(){

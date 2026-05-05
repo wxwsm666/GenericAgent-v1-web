@@ -268,4 +268,5 @@ else:
 if __name__ == '__main__':
     print(f'🧠 GenericAgent Tray ({platform.system()}, port {PORT})')
     ensure_server()
+    webbrowser.open(WEB_URL)
     TrayApp().run()

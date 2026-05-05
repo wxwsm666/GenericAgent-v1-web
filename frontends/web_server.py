@@ -196,6 +196,7 @@ def api_switch_llm():
 
 # ──────────── Custom Model CRUD ────────────
 CUSTOM_MODELS_FILE = os.path.join(project_dir, 'temp', 'custom_models.json')
+MODEL_VALIDATION_FILE = os.path.join(project_dir, 'temp', 'model_validation.json')
 
 def _load_custom_models():
     if os.path.isfile(CUSTOM_MODELS_FILE):
@@ -208,12 +209,135 @@ def _save_custom_models(models):
     with open(CUSTOM_MODELS_FILE, 'w', encoding='utf-8') as f:
         json.dump(models, f, ensure_ascii=False, indent=2)
 
+# ── Model key validation (real API call test) ──
+
+def _load_model_validation():
+    if os.path.isfile(MODEL_VALIDATION_FILE):
+        try:
+            return json.load(open(MODEL_VALIDATION_FILE, encoding='utf-8'))
+        except Exception:
+            pass
+    return {}
+
+def _save_model_validation(vdata):
+    os.makedirs(os.path.dirname(MODEL_VALIDATION_FILE), exist_ok=True)
+    with open(MODEL_VALIDATION_FILE, 'w', encoding='utf-8') as f:
+        json.dump(vdata, f, ensure_ascii=False, indent=2)
+
+def _detect_session_type(key_name, cfg):
+    """Detect session type from key name and config — same logic as agentmain.py load_llm_sessions()."""
+    if 'native' in key_name and 'claude' in key_name:
+        return 'native_claude'  # Anthropic Messages API
+    if 'native' in key_name and 'oai' in key_name:
+        return 'native_oai'     # OpenAI Chat Completions API
+    if 'claude' in key_name or 'anthropic' in key_name:
+        return 'claude'         # Anthropic Messages API
+    if 'mixin' in key_name:
+        return 'mixin'          # skip — tested individually
+    return 'oai'                # OpenAI Chat Completions API
+
+def _validate_api_key(key_name, cfg):
+    """Test an API key with a lightweight real API call.
+
+    Returns dict: { valid: bool, error: str|None, latency_ms: int, tested_at: float }
+    """
+    import urllib.request, urllib.error, ssl
+    stype = _detect_session_type(key_name, cfg)
+    apibase = cfg.get('apibase', '').rstrip('/')
+    apikey = cfg.get('apikey', '')
+
+    if stype == 'mixin':
+        return {'valid': None, 'error': 'mixin — test constituents', 'latency_ms': 0, 'tested_at': time.time()}
+
+    def _make_request(url, req, start):
+        """Try with SSL, fallback to unverified on macOS/cert issues."""
+        try:
+            ctx = ssl.create_default_context()
+            return urllib.request.urlopen(req, timeout=15, context=ctx)
+        except Exception as e:
+            if 'CERTIFICATE' in str(e).upper() or 'SSL' in str(e).upper():
+                ctx = ssl._create_unverified_context()
+                return urllib.request.urlopen(req, timeout=15, context=ctx)
+            raise
+
+    try:
+        start = time.time()
+
+        if stype in ('native_claude', 'claude'):
+            url = apibase + '/v1/messages'
+            body = json.dumps({
+                'model': cfg.get('model', ''),
+                'max_tokens': 1,
+                'messages': [{'role': 'user', 'content': 'hi'}]
+            }).encode('utf-8')
+            req = urllib.request.Request(url, data=body, method='POST')
+            req.add_header('x-api-key', apikey)
+            req.add_header('anthropic-version', '2023-06-01')
+            req.add_header('Content-Type', 'application/json')
+        else:
+            # OpenAI-compatible: GET /models (handle base URL with or without /v1)
+            if '/v1' in apibase:
+                url = apibase + '/models'
+            else:
+                url = apibase + '/v1/models'
+            req = urllib.request.Request(url, method='GET')
+            req.add_header('Authorization', f'Bearer {apikey}')
+            req.add_header('Content-Type', 'application/json')
+
+        resp = _make_request(url, req, start)
+        latency_ms = int((time.time() - start) * 1000)
+
+        if stype in ('native_claude', 'claude'):
+            body_data = json.loads(resp.read().decode('utf-8', errors='ignore'))
+            if isinstance(body_data, dict) and body_data.get('type') == 'error':
+                return {'valid': False, 'error': body_data.get('error', {}).get('message', 'API error'), 'latency_ms': latency_ms, 'tested_at': time.time()}
+            return {'valid': True, 'error': None, 'latency_ms': latency_ms, 'tested_at': time.time()}
+        else:
+            resp.read()
+            return {'valid': True, 'error': None, 'latency_ms': latency_ms, 'tested_at': time.time()}
+
+    except urllib.error.HTTPError as e:
+        latency_ms = int((time.time() - start) * 1000)
+        if e.code in (401, 403):
+            return {'valid': False, 'error': f'HTTP {e.code}: 认证失败 (API Key 无效)', 'latency_ms': latency_ms, 'tested_at': time.time()}
+        return {'valid': False, 'error': f'HTTP {e.code}: {e.reason}', 'latency_ms': latency_ms, 'tested_at': time.time()}
+    except Exception as e:
+        latency_ms = int((time.time() - start) * 1000) if 'start' in dir() else 0
+        err_msg = str(e)
+        if 'timed out' in err_msg.lower() or 'timeout' in err_msg.lower():
+            return {'valid': None, 'error': '连接超时', 'latency_ms': latency_ms, 'tested_at': time.time()}
+        if 'Name or service not known' in err_msg or 'getaddrinfo' in err_msg.lower():
+            return {'valid': False, 'error': '无法解析 API 地址', 'latency_ms': latency_ms, 'tested_at': time.time()}
+        return {'valid': None, 'error': err_msg[:120], 'latency_ms': latency_ms, 'tested_at': time.time()}
+
+def _validate_all_models():
+    """Validate all models in mykey.py, cache results. Called in background on startup and via API."""
+    mk, _ = reload_mykeys()
+    vdata = _load_model_validation()
+
+    for key_name, cfg in mk.items():
+        if not isinstance(cfg, dict):
+            continue
+        if not any(x in key_name for x in ['api', 'config', 'cookie', 'mixin']):
+            continue
+        # Re-validate if not tested before, or if it's been over 24 hours
+        existing = vdata.get(key_name, {})
+        if existing.get('valid') is not None and existing.get('tested_at', 0) > time.time() - 86400:
+            continue  # still fresh
+
+        result = _validate_api_key(key_name, cfg)
+        vdata[key_name] = result
+
+    _save_model_validation(vdata)
+    return vdata
+
 def _merge_models():
     ag = get_agent()
     if ag is None:
         return {'all': [], 'llm': [], 'native': [], 'custom': _load_custom_models()}
     llm_list = ag.list_llms()
     mk, _ = reload_mykeys()
+    vdata = _load_model_validation()
     # Build ordered key list matching llmclients iteration order in load_llm_sessions()
     key_order = []
     for k, cfg in mk.items():
@@ -222,13 +346,20 @@ def _merge_models():
     builtin = []
     for i, name, active in llm_list:
         b = ag.llmclients[i] if i < len(ag.llmclients) else None
+        key_name = key_order[i] if i < len(key_order) else ''
         info = {'index': i, 'name': name, 'active': active, 'source': 'mykey.py',
                 'type': type(b.backend).__name__ if b and hasattr(b, 'backend') else 'unknown',
-                'key': key_order[i] if i < len(key_order) else ''}
+                'key': key_name}
         if b and hasattr(b, 'backend'):
             info['model'] = getattr(b.backend, 'model', '')
             info['api_base'] = getattr(b.backend, 'api_base', '')
             info['context_win'] = getattr(b.backend, 'context_win', 0)
+        # Attach validation status from cache
+        v = vdata.get(key_name, {})
+        info['validated'] = v.get('valid') if v else None  # True/False/None
+        info['validation_error'] = v.get('error', '') if v else ''
+        info['validated_at'] = v.get('tested_at', 0) if v else 0
+        info['latency_ms'] = v.get('latency_ms', 0) if v else 0
         builtin.append(info)
     custom = _load_custom_models()
     for i, cm in enumerate(custom):
@@ -236,6 +367,9 @@ def _merge_models():
         cm['source'] = 'custom'
         cm['active'] = False
         cm['key'] = f"custom:{cm.get('id', '')}"
+        cm['validated'] = None  # custom models must be tested manually
+        cm['validation_error'] = ''
+        cm['validated_at'] = 0
     return {'builtin': builtin, 'custom': custom, 'all': builtin + custom}
 
 @app.route('/api/models/merged')
@@ -286,6 +420,19 @@ def api_custom_models_delete(mid):
     _save_custom_models(models)
     return jsonify({'ok': True})
 
+@app.route('/api/models/custom/restore', methods=['POST'])
+def api_custom_models_restore():
+    """Restore custom models from backup."""
+    models = request.json.get('models', [])
+    if not models:
+        return jsonify({'error': 'no models provided'}), 400
+    # Assign new IDs to avoid conflicts, then save
+    for m in models:
+        if not m.get('id'):
+            m['id'] = uuid.uuid4().hex[:8]
+    _save_custom_models(models)
+    return jsonify({'ok': True, 'count': len(models)})
+
 @app.route('/api/models/custom/<mid>/test', methods=['POST'])
 def api_custom_models_test(mid):
     models = _load_custom_models()
@@ -311,6 +458,18 @@ def api_custom_models_test(mid):
         return jsonify({'ok': False, 'status_code': e.code, 'error': str(e.reason)})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)})
+
+@app.route('/api/models/validate-all', methods=['POST'])
+def api_models_validate_all():
+    """Re-validate all built-in model API keys. Runs synchronously for immediate feedback."""
+    vdata = _validate_all_models()
+    return jsonify({'ok': True, 'results': vdata})
+
+@app.route('/api/models/validation-status')
+def api_models_validation_status():
+    """Return cached validation status for all models."""
+    vdata = _load_model_validation()
+    return jsonify({'results': vdata})
 
 # ──────────── Sessions / History ────────────
 @app.route('/api/sessions')
@@ -418,6 +577,30 @@ def api_tasks_toggle():
     data['enabled'] = not data.get('enabled', True)
     json.dump(data, open(task_path, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
     return jsonify({'ok': True, 'enabled': data['enabled']})
+
+@app.route('/api/tasks/restore', methods=['POST'])
+def api_tasks_restore():
+    """Restore scheduled tasks from backup."""
+    tasks = request.json.get('tasks', [])
+    if not tasks:
+        return jsonify({'error': 'no tasks provided'}), 400
+    task_dir = os.path.join(project_dir, 'sche_tasks')
+    os.makedirs(task_dir, exist_ok=True)
+    restored = 0
+    for t in tasks:
+        try:
+            fname = t.get('_file') or f"{t.get('name','task')}_{uuid.uuid4().hex[:6]}.json"
+            if not fname.endswith('.json'):
+                fname += '.json'
+            fpath = os.path.join(task_dir, fname)
+            # Clean internal fields
+            t.pop('_file', None); t.pop('_path', None)
+            with open(fpath, 'w', encoding='utf-8') as f:
+                json.dump(t, f, ensure_ascii=False, indent=2)
+            restored += 1
+        except Exception as e:
+            print(f"[Restore] Failed to restore task: {e}")
+    return jsonify({'ok': True, 'restored': restored})
 
 # ──────────── Channels ────────────
 CHANNEL_SPEC = {
@@ -987,6 +1170,9 @@ def api_save_apikey():
     global agent, _agent_init_error
     agent = None
     _agent_init_error = None
+    # Clear validation cache so new keys get re-validated
+    if os.path.isfile(MODEL_VALIDATION_FILE):
+        os.remove(MODEL_VALIDATION_FILE)
     return jsonify({
         'ok': True,
         'message': '配置已保存，请重启服务生效。点击下方"重启服务"按钮。',
@@ -2820,6 +3006,8 @@ def start_web_server(port=18600, open_browser=True):
         threading.Timer(1.5, lambda: webbrowser.open(f'http://localhost:{port}')).start()
     # Start auto-moments background thread
     threading.Thread(target=_auto_moments_loop, daemon=True).start()
+    # Start model key validation in background
+    threading.Thread(target=_validate_all_models, daemon=True).start()
     app.run(host='0.0.0.0', port=port, threaded=True, debug=False)
 
 
