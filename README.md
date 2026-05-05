@@ -243,6 +243,18 @@ Agent 会自动执行，验证整条链路是否打通。
 
 ---
 
+## 💬 交流群
+
+<p align="center">
+  <strong>扫码加入微信群，一起交流使用心得</strong>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/wechat_group.jpg" width="260" alt="微信群二维码">
+</p>
+
+---
+
 ## 📄 许可
 
 MIT License
