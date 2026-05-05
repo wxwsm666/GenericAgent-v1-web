@@ -446,6 +446,16 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
 .msg.assistant .bub{background:var(--msg-assistant-bg);border:1px solid var(--msg-assistant-border);border-radius:4px var(--r) var(--r) var(--r)}
 .msg .ts{font-size:11px;color:var(--text3);margin-top:4px}
 
+/* Quote / Reply */
+.msg .quote-btn{display:none;font-size:11px;cursor:pointer;background:var(--glass-bg);border:1px solid var(--glass-border);border-radius:6px;padding:2px 8px;margin-left:6px;color:var(--text2);transition:all .15s}
+.msg:hover .quote-btn{display:inline-block}
+.msg .quote-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.quote-card{display:flex;align-items:center;gap:8px;padding:8px 12px;margin:0 10px 6px;background:var(--glass-bg-strong);border:1px solid var(--accent);border-radius:10px;font-size:12px}
+.quote-card .qc-role{font-weight:600;color:var(--accent);white-space:nowrap}
+.quote-card .qc-text{flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.quote-card .qc-close{cursor:pointer;color:var(--text3);font-size:16px;line-height:1}
+.quote-card .qc-close:hover{color:var(--red)}
+
 /* Chat Input */
 .chat-input{
   padding:16px 24px;
@@ -1003,12 +1013,13 @@ const NAV = [
   {id:'tools',    icon:'🔧',label:'工具',devOnly:true},
   {id:'terminal', icon:'⬛',label:'终端',devOnly:true},
   {id:'files',    icon:'📁',label:'文件',devOnly:true},
+  {sec:'通用'},
+  {id:'settings', icon:'⚙️',label:'配置'},
   {sec:'系统管理',devOnly:true},
   {id:'system',   icon:'💻',label:'系统',devOnly:true},
   {id:'gateway',  icon:'🌐',label:'网关',devOnly:true},
   {id:'user',     icon:'👤',label:'用户',devOnly:true},
   {id:'language', icon:'🌍',label:'语言',devOnly:true},
-  {id:'settings', icon:'⚙️',label:'配置'},
   {sec:'高级扩展',devOnly:true},
   {id:'memory',   icon:'💾',label:'记忆',devOnly:true},
   {id:'skills',   icon:'🧠',label:'技能',devOnly:true},
@@ -1157,11 +1168,41 @@ async function renderDashboard(){
   try{
     const d=await api('/dashboard');
     if(d.status==='error'&&d.error){
-      html+=`<div class="card" style="border-color:var(--orange);background:var(--glass-bg-strong);margin-bottom:16px">
-        <h3>⚠️ 未配置 API Key</h3>
-        <p style="margin:8px 0;color:var(--text2)">${esc(d.error)}</p>
-        <p style="margin:8px 0;color:var(--text3);font-size:12px">配置步骤：编辑项目目录下的 <code>mykey.py</code> 文件，填写你的 API Key，然后重启服务。</p>
-        <button class="btn acc" onclick="goPage('settings')">⚙️ 前往设置</button>
+      html+=`<div class="card" id="onboardWizard" style="border-color:var(--accent);background:var(--glass-bg-strong);margin-bottom:16px">
+        <h3>👋 欢迎使用 GenericAgent — 首次配置</h3>
+        <p style="margin:4px 0 12px;color:var(--text2);font-size:13px">选择你的模型服务商，填写 API Key，即可开始使用。</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><label style="font-size:12px;color:var(--text2)">🤖 服务商</label>
+            <select id="obProv" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--glass-border);background:var(--glass-bg);color:var(--text);margin-top:4px;font-size:14px">
+              <option value="openai">OpenAI (ChatGPT)</option>
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="minimax">MiniMax</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="zhipu">智谱 (GLM)</option>
+              <option value="moonshot">Moonshot (Kimi)</option>
+              <option value="qwen">通义千问 (Qwen)</option>
+              <option value="baichuan">百川 (Baichuan)</option>
+              <option value="yi">零一万物 (Yi)</option>
+              <option value="doubao">豆包 (ByteDance)</option>
+              <option value="xai">xAI (Grok)</option>
+              <option value="google">Google (Gemini)</option>
+              <option value="custom">自定义</option>
+            </select></div>
+          <div><label style="font-size:12px;color:var(--text2)">🔑 API Key</label>
+            <input id="obKey" type="password" placeholder="sk-..." style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--glass-border);background:var(--glass-bg);color:var(--text);margin-top:4px;font-size:14px"></div>
+        </div>
+        <div class="row" style="gap:8px;margin-top:12px">
+          <button class="btn acc" onclick="saveOnboardKey()" style="padding:10px 24px;font-size:14px">🚀 保存并开始使用</button>
+          <button class="btn" onclick="goPage('settings')" style="font-size:12px">⚙️ 高级配置</button>
+          <span id="obMsg" style="font-size:12px"></span>
+        </div>
+        <script>
+        (function(){
+          const sel=document.getElementById('obProv');
+          if(!sel)return;
+          sel.addEventListener('change',function(){});
+        })();
+        </script>
       </div>`;
     }
     html+=`<div class="grid grid-4">
@@ -1367,6 +1408,11 @@ function renderChatMessages(targetId, msgsOverride){
   });
   if(cur) rounds.push(cur);
   const foldKey = 'fold-round-'+sid;
+  // Build flat message index map for quote feature
+  window._msgLookup = window._msgLookup||{};
+  let msgIdx = 0;
+  msgs.forEach(m=>{ window._msgLookup[msgIdx] = m; msgIdx++; });
+  let mi = 0;
   rounds.forEach((r,i)=>{
     const foldId = foldKey+'-'+i;
     const preview = (r.user?.content||'').substring(0,60);
@@ -1380,15 +1426,53 @@ function renderChatMessages(targetId, msgsOverride){
       <span class="round-fold-meta">${r.user?.ts||''}</span>
     </div><div class="round-fold-body"></div>`;
     const body = folder.querySelector('.round-fold-body');
-    body.appendChild(buildMsgEl(r.user));
-    if(r.assistant) body.appendChild(buildMsgEl(r.assistant));
+    body.appendChild(buildMsgEl(r.user, mi++));
+    if(r.assistant) body.appendChild(buildMsgEl(r.assistant, mi++));
     el.appendChild(folder);
   });
   scrollChat(targetId);
 }
-function buildMsgEl(m){
+let _quotedMsg = null; // {role, content} for current quote
+
+function setQuoteIdx(role, idx){
+  const m = (window._msgLookup||{})[idx];
+  if(!m) return;
+  _quotedMsg = {role:role, content:m.content||''};
+  showQuoteCard();
+  toast('已引用消息，发送时将附带引用内容','ok');
+}
+function setQuote(role, content){
+  _quotedMsg = {role:role, content:content||''};
+  showQuoteCard();
+  toast('已引用消息','ok');
+}
+function clearQuote(){
+  _quotedMsg = null;
+  const qc = document.querySelector('.quote-card'); if(qc) qc.remove();
+}
+function showQuoteCard(){
+  if(!_quotedMsg) return;
+  // Remove existing quote card
+  document.querySelectorAll('.quote-card').forEach(el=>el.remove());
+  // Find all chat input containers
+  const inputs = document.querySelectorAll('.chat-input');
+  inputs.forEach(inp=>{
+    const card = document.createElement('div');
+    card.className = 'quote-card';
+    const roleLabel = _quotedMsg.role==='user'?'👤 用户':'🤖 AI';
+    const preview = (_quotedMsg.content||'').replace(/<[^>]*>/g,'').substring(0,100);
+    card.innerHTML = `<span class="qc-role">${roleLabel}</span><span class="qc-text">${esc(preview)}</span><span class="qc-close" onclick="clearQuote()">×</span>`;
+    inp.insertBefore(card, inp.firstChild);
+  });
+}
+
+function buildMsgEl(m, idx){
   const d=document.createElement('div');d.className='msg '+m.role;
-  d.innerHTML=`<div class="av">${m.role==='user'?'👤':'🤖'}</div><div><div class="bub">${fmtContent(m.content)}</div><div class="ts">${m.ts||''}</div></div>`;
+  const role=m.role||'user';
+  const content=m.content||'';
+  d.dataset.msgIdx = idx;
+  d.dataset.msgRole = role;
+  d.innerHTML=`<div class="av">${role==='user'?'👤':'🤖'}</div><div><div class="bub">${fmtContent(content)}<button class="quote-btn" onclick="event.stopPropagation();setQuoteIdx('${role}',${idx})">💬 引用</button></div><div class="ts">${m.ts||''}</div></div>`;
   return d;
 }
 function appendMsgEl(role,content,ts,targetId){
@@ -1581,7 +1665,10 @@ function renderChatView(){
     const inp=document.getElementById('cinput'+(i||'0'));
     if(inp){
       const tId = i===0 ? 'msgs0' : ('msgs'+i);
-      inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat(tId)}});
+      let composing=false;
+      inp.addEventListener('compositionstart',()=>{composing=true});
+      inp.addEventListener('compositionend',()=>{composing=false});
+      inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!composing){e.preventDefault();sendChat(tId)}});
       inp.addEventListener('input',()=>{inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,180)+'px'});
       if(i===0) inp.focus();
     }
@@ -1739,14 +1826,16 @@ async function sendChat(targetId){
   const filePaths=uploadedFiles.map(f=>f.path);uploadedFiles=[];renderFileChips();
 
   if(msg.startsWith('/')){
-    const d=await apiPost('/chat/stream',{message:msg,session_id:sid,files:filePaths});
-    appendMsg('assistant',d.content||JSON.stringify(d),ts,targetId);return;
+    const d=await apiPost('/chat/stream',{message:msg,session_id:sid,files:filePaths,quote:_quotedMsg||undefined});
+    appendMsg('assistant',d.content||JSON.stringify(d),ts,targetId);
+    _quotedMsg=null;clearQuote();return;
   }
   _streaming[targetId]=true;if(csendBtn)csendBtn.disabled=true;
   const sb=document.getElementById(stopId);if(sb){sb.style.display='';sb.onclick=async()=>{await fetch('/api/abort',{method:'POST'});}}
   const thinkEl=appendThink(targetId);let full='',msgEl=null;
+  const quoteData = _quotedMsg; _quotedMsg=null; clearQuote();
   try{
-    const res=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,session_id:sid,files:filePaths})});
+    const res=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,session_id:sid,files:filePaths,quote:quoteData||undefined})});
     const reader=res.body.getReader();const dec=new TextDecoder();let buf='';
     while(true){
       const{done,value}=await reader.read();if(done)break;
@@ -2058,7 +2147,10 @@ async function renderGroupchat(){
   h+=`</div>`;
   C.innerHTML=h;
   gcMsgs.forEach(m=>appendGCMsgEl(m));
-  document.getElementById('gcinput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendGC()}});
+  let gccomposing=false;
+  document.getElementById('gcinput').addEventListener('compositionstart',()=>{gccomposing=true});
+  document.getElementById('gcinput').addEventListener('compositionend',()=>{gccomposing=false});
+  document.getElementById('gcinput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!gccomposing){e.preventDefault();sendGC()}});
 }
 let _momentsPosts = [];
 
@@ -3069,6 +3161,12 @@ async function renderSettings(){
           <option value="deepseek">DeepSeek</option>
           <option value="zhipu">智谱 (GLM)</option>
           <option value="moonshot">Moonshot (Kimi)</option>
+          <option value="qwen">通义千问 (Qwen)</option>
+          <option value="baichuan">百川 (Baichuan)</option>
+          <option value="yi">零一万物 (Yi)</option>
+          <option value="doubao">豆包 (ByteDance)</option>
+          <option value="xai">xAI (Grok)</option>
+          <option value="google">Google (Gemini)</option>
           <option value="custom">自定义</option>
         </select></div>
       <div><label style="font-size:12px;color:var(--text2)">API Key</label>
@@ -3094,6 +3192,12 @@ async function renderSettings(){
     deepseek:{base:'https://api.deepseek.com',model:'deepseek-chat'},
     zhipu:{base:'https://open.bigmodel.cn/api/paas/v4',model:'glm-4'},
     moonshot:{base:'https://api.moonshot.cn/v1',model:'moonshot-v1-8k'},
+    qwen:{base:'https://dashscope.aliyuncs.com/compatible-mode/v1',model:'qwen-plus'},
+    baichuan:{base:'https://api.baichuan-ai.com/v1',model:'Baichuan4'},
+    yi:{base:'https://api.lingyiwanwu.com/v1',model:'yi-large'},
+    doubao:{base:'https://ark.cn-beijing.volces.com/api/v3',model:'doubao-pro-32k'},
+    xai:{base:'https://api.x.ai/v1',model:'grok-2'},
+    google:{base:'https://generativelanguage.googleapis.com/v1beta/openai',model:'gemini-2.0-flash'},
     custom:{base:'',model:''}
   };
   (function(){
@@ -3203,6 +3307,27 @@ async function doUpdate(){
     st.innerHTML=msg;
     btn.style.display='none';
   }catch(e){st.innerHTML=`<p style="font-size:13px;color:var(--red)">❌ 更新失败: ${esc(e.message)}</p>`;btn.disabled=false;btn.textContent='⬇️ 立即更新'}
+}
+
+async function saveOnboardKey(){
+  const prov=document.getElementById('obProv').value;
+  const key=document.getElementById('obKey').value.trim();
+  const msg=document.getElementById('obMsg');
+  if(!key){msg.innerHTML='<span style="color:var(--red)">❌ 请输入 API Key</span>';return}
+  msg.innerHTML='<span style="color:var(--accent)">⏳ 保存中...</span>';
+  const presets=window._apPresets||{};
+  const preset=presets[prov]||{};
+  const base=preset.base||'';
+  const model=preset.model||'';
+  try{
+    const d=await apiPost('/settings/apikey',{provider:prov,api_key:key,api_base:base,model:model});
+    if(d.ok){
+      msg.innerHTML='<span style="color:var(--green)">✅ 配置已保存！正在重启服务...</span>';
+      setTimeout(async()=>{try{await apiPost('/system/restart',{})}catch(e){}setTimeout(()=>{location.reload()},2000)},1000);
+    }else{
+      msg.innerHTML='<span style="color:var(--red)">❌ '+esc(d.error||'保存失败')+'</span>';
+    }
+  }catch(e){msg.innerHTML='<span style="color:var(--red)">❌ 网络错误</span>'}
 }
 
 async function doRestart(){

@@ -141,19 +141,27 @@ echo.
 
 :: ---- Step 5: Start server ----
 :launch
+set PORT=18600
+
+:: Kill any existing process on our port
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%PORT%" ^| findstr "LISTENING" 2^>nul') do (
+    echo [INFO] Port %PORT% in use, killing process %%a...
+    taskkill /F /PID %%a >nul 2>&1
+)
+
 echo ================================================================
 echo   Starting Web UI...
 echo.
-echo   Browser will open:  http://localhost:18600
+echo   Browser will open:  http://localhost:%PORT%
 echo   Press Ctrl+C or close this window to stop.
 echo ================================================================
 echo.
 
 :: Open browser
-start "" http://localhost:18600 2>nul
+start "" http://localhost:%PORT% 2>nul
 
 cd frontends
-"..\%VENV_PY%" web_server.py --port 18600
+"..\%VENV_PY%" web_server.py --port %PORT%
 
 echo.
 echo Server stopped. Press any key to exit.

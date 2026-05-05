@@ -58,19 +58,33 @@ if [ ! -f "$SCRIPT_DIR/mykey.py" ]; then
     fi
 fi
 
+# ── 端口冲突检测 ──
+PORT=18600
+# Kill any existing process on our port
+if lsof -ti :$PORT &>/dev/null; then
+    echo -e "${YELLOW}⚠️  端口 $PORT 被占用，正在释放...${NC}"
+    kill -9 $(lsof -ti :$PORT) 2>/dev/null || true
+    sleep 0.5
+fi
+# Also warn about legacy port 18581
+if lsof -ti :18581 &>/dev/null; then
+    echo -e "${YELLOW}⚠️  检测到旧版服务在端口 18581 运行中${NC}"
+    echo -e "${YELLOW}   如需停止旧版: kill -9 \$(lsof -ti :18581)${NC}"
+fi
+
 # ── 启动 ──
 echo -e "${GREEN}🚀 启动 Web UI...${NC}"
 echo ""
-echo "  浏览器将自动打开:  http://localhost:18600"
+echo "  浏览器将自动打开:  http://localhost:$PORT"
 echo "  按 Ctrl+C 停止服务"
 echo ""
 
 # Auto-open browser
 sleep 1
-open "http://localhost:18600" 2>/dev/null || true
+open "http://localhost:$PORT" 2>/dev/null || true
 
 cd "$SCRIPT_DIR/frontends"
-python3 web_server.py --port 18600
+python3 web_server.py --port $PORT
 
 # 保持终端打开
 echo ""

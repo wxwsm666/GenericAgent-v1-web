@@ -1,6 +1,6 @@
 {
-  "version": "0.8.3",
-  "changelog": "修复: 默认对话重复创建+消息叠加、无需API Key即可启动UI、网页内配置API Key(零门槛)、macOS SSL修复、自动打开浏览器",
+  "version": "0.8.4",
+  "changelog": "打断智能续接+引用回复+新手引导+热门模型+IME修复+配置页修复+端口冲突修复",
   "download_url": "https://github.com/wxwsm666/GenericAgent-v1-web/archive/refs/heads/main.zip",
   "min_python": "3.10"
 }

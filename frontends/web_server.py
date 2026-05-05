@@ -1454,6 +1454,7 @@ class SessionManager:
             s['backend_history'] = list(ag.llmclient.backend.history)
         if hasattr(ag.llmclient, '_pending_tool_ids'):
             s['_pending_tool_ids'] = list(ag.llmclient._pending_tool_ids)
+        s['_last_interruption'] = getattr(ag, '_last_interruption', None)
         self._autosave()
 
     def restore(self, ag, sid):
@@ -1479,6 +1480,8 @@ class SessionManager:
         if ag.handler:
             ag.handler.history_info = list(s.get('handler_history', s.get('history', [])))
             ag.handler.working = dict(s.get('working', {}))
+        # Restore interruption context (if any)
+        ag._last_interruption = s.get('_last_interruption', None)
         # Ensure working state is persisted in session data
         if ag.handler and ag.handler.working:
             s['working'] = dict(ag.handler.working)
@@ -2030,6 +2033,7 @@ def api_chat_stream():
     prompt = (data.get('message') or '').strip()
     sid = data.get('session_id', '')
     file_paths = data.get('files', [])  # Optional: file paths for context
+    quote = data.get('quote')  # Optional: {role, content} for quoted message
     if not prompt:
         return jsonify({'error': 'empty message'}), 400
     ag = get_agent()
@@ -2052,6 +2056,11 @@ def api_chat_stream():
         return jsonify({'type': 'command', 'content': result})
     # Save original user message before injecting system context
     original_prompt = prompt
+    # Inject quote context (user replied to a specific message)
+    if quote and isinstance(quote, dict) and quote.get('content'):
+        qrole = '用户' if quote.get('role') == 'user' else 'AI'
+        qcontent = quote['content'][:500]
+        prompt = f"[引用消息] {qrole} 之前说过:\n{qcontent}\n\n用户当前消息:\n{prompt}"
     # Inject reflection context (past lessons learned)
     reflection_ctx = _get_reflection_context(limit=3)
     if reflection_ctx:
@@ -2062,6 +2071,28 @@ def api_chat_stream():
     if file_paths:
         file_hint = '\n'.join(f'[FILE:{p}]' for p in file_paths)
         prompt = f"{file_hint}\n\n{prompt}"
+    # Inject interruption context if user interrupted a running task
+    if hasattr(ag, '_last_interruption') and ag._last_interruption:
+        ctx = ag._last_interruption
+        query_preview = (ctx.get('query', '') or '')[:150]
+        turns = ctx.get('agent_turns', 0)
+        last_step = (ctx.get('last_summary', '') or '')[:120]
+        wm = (ctx.get('working_memory', '') or '')[:200]
+        parts = ['[系统通知] 你上一个任务被用户中断了，现在用户发了新消息。']
+        if query_preview:
+            parts.append(f'上一任务: {query_preview}')
+        parts.append(f'已执行回合: {turns} 轮')
+        if last_step:
+            parts.append(f'最后操作: {last_step}')
+        if wm:
+            parts.append(f'工作记忆: {wm}')
+        parts.append('')
+        parts.append('请按以下流程处理:')
+        parts.append('1. 先简短回应用户的新消息')
+        parts.append('2. 告知上一任务的进度')
+        parts.append('3. 询问用户是继续上一任务、按新要求做、还是依次执行')
+        prompt = '\n'.join(parts) + '\n\n' + prompt
+        ag._last_interruption = None  # only inject once
     display_queue = ag.put_task(prompt, source="user")
     if sid:
         session_mgr.add_message(sid, 'user', original_prompt)

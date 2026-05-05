@@ -101,7 +101,17 @@ class GeneraticAgent:
         if not self.is_running: return
         print('Abort current task...')
         self.stop_sig = True
-        if self.handler is not None: self.handler.code_stop_signal.append(1)
+        if self.handler is not None:
+            self.handler.code_stop_signal.append(1)
+            # Capture interruption context for the next message
+            agent_turns = sum(1 for x in self.handler.history_info
+                             if isinstance(x, str) and x.startswith('[Agent]'))
+            self._last_interruption = {
+                'query': getattr(self, '_current_task_query', ''),
+                'agent_turns': agent_turns,
+                'last_summary': self.handler.history_info[-1] if self.handler.history_info else '',
+                'working_memory': self.handler.working.get('key_info', '') if self.handler.working else '',
+            }
             
     def put_task(self, query, source="user", images=None):
         display_queue = queue.Queue()
@@ -132,6 +142,7 @@ class GeneraticAgent:
             if raw_query is None:
                 self.task_queue.task_done(); continue
             self.is_running = True
+            self._current_task_query = raw_query
             rquery = smart_format(raw_query.replace('\n', ' '), max_str_len=200)
             self.history.append(f"[USER]: {rquery}")
             
@@ -161,13 +172,23 @@ class GeneraticAgent:
                 if '</file_content>' in full_resp: full_resp = re.sub(r'<file_content>\s*(.*?)\s*</file_content>', r'\n````\n<file_content>\n\1\n</file_content>\n````', full_resp, flags=re.DOTALL)                
                 display_queue.put({'done': full_resp, 'source': source})
                 self.history = handler.history_info
+                self._last_interruption = None  # task completed, clear interruption
             except Exception as e:
                 print(f"Backend Error: {format_error(e)}")
                 display_queue.put({'done': full_resp + f'\n```\n{format_error(e)}\n```', 'source': source})
             finally:
                 if self.stop_sig:
                     print('User aborted the task.')
-                    #with self.task_queue.mutex: self.task_queue.queue.clear()
+                    # Belt-and-suspenders: ensure interruption context is captured
+                    if not getattr(self, '_last_interruption', None) and handler:
+                        agent_turns = sum(1 for x in handler.history_info
+                                         if isinstance(x, str) and x.startswith('[Agent]'))
+                        self._last_interruption = {
+                            'query': getattr(self, '_current_task_query', raw_query),
+                            'agent_turns': agent_turns,
+                            'last_summary': handler.history_info[-1] if handler.history_info else '',
+                            'working_memory': handler.working.get('key_info', '') if handler.working else '',
+                        }
                 self.is_running = self.stop_sig = False
                 self.task_queue.task_done()
                 if self.handler is not None: self.handler.code_stop_signal.append(1)

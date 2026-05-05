@@ -181,6 +181,7 @@ def reset_conversation(agent, message='🆕 已开启新对话，当前上下文
             client.last_tools = ''
     if hasattr(agent, 'handler'):
         agent.handler = None
+    agent._last_interruption = None  # clear interruption context
     return message
 
 def format_list(sessions, limit=20):
