@@ -12,6 +12,19 @@ def try_call_generator(func, *args, **kwargs):
     return ret
 
 class BaseHandler:
+    def __init__(self):
+        self._progress_queue = None
+
+    def set_progress_queue(self, q):
+        self._progress_queue = q
+
+    def _emit_progress(self, event_type, **data):
+        if self._progress_queue:
+            try:
+                self._progress_queue.put({'progress': event_type, **data})
+            except Exception:
+                pass
+
     def tool_before_callback(self, tool_name, args, response): pass
     def tool_after_callback(self, tool_name, args, response, ret): pass
     def turn_end_callback(self, response, tool_calls, tool_results, turn, next_prompt, exit_reason): return next_prompt

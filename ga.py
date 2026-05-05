@@ -261,12 +261,28 @@ def consume_file(dr, file):
 class GenericAgentHandler(BaseHandler):
     '''Generic Agent 工具库，包含多种工具的实现。工具函数自动加上了 do_ 前缀。实际工具名没有前缀。'''
     def __init__(self, parent, last_history=None, cwd='./temp'):
+        super().__init__()
         self.parent = parent
         self.working = {}
         self.cwd = cwd;  self.current_turn = 0
         self.history_info = last_history if last_history else []
         self.code_stop_signal = []
         self._done_hooks = []
+
+    def tool_before_callback(self, tool_name, args, response):
+        if tool_name != 'no_tool':
+            import json
+            args_preview = json.dumps(args, ensure_ascii=False, default=str)
+            if len(args_preview) > 300:
+                args_preview = args_preview[:300] + '...'
+            self._emit_progress('tool_start', tool=tool_name, args=args_preview)
+
+    def tool_after_callback(self, tool_name, args, response, ret):
+        if tool_name != 'no_tool':
+            result = str(ret) if ret else 'OK'
+            if len(result) > 500:
+                result = result[:500] + '...'
+            self._emit_progress('tool_result', tool=tool_name, result=result)
 
     def _get_abs_path(self, path):
         if not path: return ""

@@ -109,6 +109,8 @@ def api_chat():
                 except queue.Empty:
                     yield f"data: {json.dumps({'type':'heartbeat'})}\n\n"
                     continue
+                if 'progress' in item:
+                    yield f"data: {json.dumps({'type':item['progress'],'tool':item.get('tool',''),'args':item.get('args',''),'result':item.get('result','')})}\n\n"
                 if 'next' in item:
                     response = item['next']
                     yield f"data: {json.dumps({'type':'chunk','content':response})}\n\n"
@@ -2157,6 +2159,10 @@ def api_chat_stream():
                 except queue.Empty:
                     yield f"data: {json.dumps({'type':'heartbeat'})}\n\n"
                     continue
+                if 'progress' in item:
+                    event_type = item.get('progress', '')
+                    if event_type in ('tool_start', 'tool_result'):
+                        yield f"data: {json.dumps({'type':event_type,'tool':item.get('tool',''),'args':item.get('args',''),'result':item.get('result','')})}\n\n"
                 if 'next' in item:
                     response = item['next']
                     clean = _clean_response(response)
@@ -2289,6 +2295,8 @@ def api_moments_generate():
                 except queue.Empty:
                     yield f"data: {json.dumps({'type':'heartbeat'})}\n\n"
                     continue
+                if 'progress' in item:
+                    yield f"data: {json.dumps({'type':item['progress'],'tool':item.get('tool',''),'args':item.get('args',''),'result':item.get('result','')})}\n\n"
                 if 'next' in item:
                     response = item['next']
                     yield f"data: {json.dumps({'type':'chunk','content':response})}\n\n"

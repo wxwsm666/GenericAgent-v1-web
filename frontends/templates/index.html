@@ -522,6 +522,26 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
 .think .d span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);animation:bounce 1.4s infinite;margin:0 3px}
 .think .d span:nth-child(2){animation-delay:.2s}.think .d span:nth-child(3){animation-delay:.4s}
 
+/* Tool execution cards (ChatGPT-style) */
+.tool-card{margin:6px 0;border:1px solid var(--glass-border);border-radius:10px;overflow:hidden;font-size:13px;background:var(--glass-bg);transition:all .2s}
+.tool-card-header{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;user-select:none;color:var(--text)}
+.tool-card-header:hover{background:var(--glass-bg-strong)}
+.tool-card-icon{font-size:14px;flex-shrink:0}
+.tool-card-name{font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tool-card-status{font-size:11px;color:var(--text3);flex-shrink:0}
+.tool-card.running .tool-card-status{color:var(--accent)}
+.tool-card.done .tool-card-status{color:var(--green)}
+.tool-card-body{display:none;padding:0 12px 10px;font-size:12px;color:var(--text2);border-top:1px solid var(--glass-border);max-height:200px;overflow-y:auto}
+.tool-card.expanded .tool-card-body{display:block}
+.tool-card-body .tc-section{margin-top:6px}
+.tool-card-body .tc-label{font-weight:600;margin-bottom:2px;color:var(--text)}
+.tool-card-body pre{background:var(--bg);padding:6px 8px;border-radius:6px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:120px;overflow-y:auto}
+.tool-card-arrow{font-size:10px;transition:transform .2s;flex-shrink:0;color:var(--text3)}
+.tool-card.expanded .tool-card-arrow{transform:rotate(90deg)}
+.tool-spinner{width:12px;height:12px;border:2px solid var(--glass-border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+
 /* ═══════════════ GROUP CHAT (WeChat-style) ═══════════════ */
 .gc-chat-area{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .gc-output{flex:1;overflow-y:auto;padding:16px 20px}
@@ -1837,6 +1857,7 @@ async function sendChat(targetId){
   _streaming[targetId]=true;if(csendBtn)csendBtn.disabled=true;
   const sb=document.getElementById(stopId);if(sb){sb.style.display='';sb.onclick=async()=>{await fetch('/api/abort',{method:'POST'});}}
   const thinkEl=appendThink(targetId);let full='',msgEl=null;
+  const toolCards={};let toolSeq=0; // track tool card elements
   const quoteData = _quotedMsg; _quotedMsg=null; clearQuote();
   try{
     const res=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,session_id:sid,files:filePaths,quote:quoteData||undefined})});
@@ -1847,7 +1868,42 @@ async function sendChat(targetId){
       for(const line of lines){
         if(!line.startsWith('data: '))continue;
         try{const d=JSON.parse(line.slice(6));
-          if(d.type==='chunk'){if(thinkEl)thinkEl.remove();full=d.content;
+          if(d.type==='tool_start'){
+            if(thinkEl)thinkEl.remove();
+            const elId=targetId||'msgs0';const chatEl=document.getElementById(elId);
+            if(chatEl){
+              toolSeq++;const cardId='tc_'+toolSeq;
+              const card=document.createElement('div');card.className='tool-card running';card.id=cardId;
+              card.innerHTML=`<div class="tool-card-header" onclick="this.parentElement.classList.toggle('expanded')">
+                <div class="tool-spinner"></div>
+                <span class="tool-card-icon">🔧</span>
+                <span class="tool-card-name">${esc(d.tool)}</span>
+                <span class="tool-card-status">执行中...</span>
+                <span class="tool-card-arrow">▶</span>
+              </div>
+              <div class="tool-card-body">
+                ${d.args?`<div class="tc-section"><div class="tc-label">📥 参数</div><pre>${esc(d.args)}</pre></div>`:''}
+              </div>`;
+              chatEl.appendChild(card);toolCards[cardId]=card;scrollChat(targetId);
+            }
+          }
+          else if(d.type==='tool_result'){
+            const cardId='tc_'+toolSeq;
+            const card=toolCards[cardId];
+            if(card){
+              card.classList.remove('running');card.classList.add('done');
+              const header=card.querySelector('.tool-card-header');
+              const spinner=card.querySelector('.tool-spinner');if(spinner)spinner.remove();
+              const status=card.querySelector('.tool-card-status');if(status)status.textContent='完成';
+              const body=card.querySelector('.tool-card-body');
+              if(body&&d.result){
+                let bodyHTML=body.innerHTML;
+                bodyHTML+=`<div class="tc-section"><div class="tc-label">📤 结果</div><pre>${esc(d.result)}</pre></div>`;
+                body.innerHTML=bodyHTML;
+              }
+            }
+          }
+          else if(d.type==='chunk'){if(thinkEl)thinkEl.remove();full=d.content;
             if(!msgEl){msgEl=appendMsgEl('assistant',full,ts,targetId);if(msgEl)msgEl.id='smsg'}
             else{const bub=msgEl.querySelector('.bub');if(bub)bub.innerHTML=fmtContent(full);scrollChat(targetId)}}
           else if(d.type==='done'){if(thinkEl)thinkEl.remove();
