@@ -928,7 +928,52 @@ def api_settings():
         config['pyproject'] = open(pyproject, encoding='utf-8').read()
     return jsonify(config)
 
-# ──────────── Online Update ────────────
+@app.route('/api/settings/apikey', methods=['POST'])
+def api_save_apikey():
+    """Save API key configuration from the web setup wizard."""
+    data = request.json or {}
+    api_key = (data.get('api_key') or '').strip()
+    api_base = (data.get('api_base') or '').strip()
+    model = (data.get('model') or 'gpt-4o').strip()
+    provider = (data.get('provider') or 'openai').strip()
+    if not api_key:
+        return jsonify({'ok': False, 'error': 'API Key 不能为空'})
+    mykey_path = os.path.join(project_dir, 'mykey.py')
+    # Read current mykey.py content
+    if os.path.isfile(mykey_path):
+        with open(mykey_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    else:
+        content = ''
+    # Build config block
+    config_name = f'{provider}_config'
+    new_block = f"""{config_name} = {{
+    'name': '{provider}',
+    'apikey': '{api_key}',
+    'apibase': '{api_base}',
+    'model': '{model}',
+}}"""
+    # If config block already exists, replace it; otherwise append
+    import re
+    pattern = rf'^{config_name}\s*=\s*\{{.*?^\}}'
+    if re.search(pattern, content, re.MULTILINE | re.DOTALL):
+        content = re.sub(pattern, new_block, content, flags=re.MULTILINE | re.DOTALL)
+    else:
+        if content and not content.endswith('\n'):
+            content += '\n'
+        content += f'\n# ── 从 Web UI 配置 ──\n{new_block}\n'
+    # Write back
+    with open(mykey_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+    # Reset agent so next request reinitializes with new key
+    global agent, _agent_init_error
+    agent = None
+    _agent_init_error = None
+    return jsonify({
+        'ok': True,
+        'message': '配置已保存，请重启服务生效。点击下方"重启服务"按钮。',
+        'config_name': config_name,
+    })
 def _urlopen_ssl(url, timeout=10):
     """Open URL with SSL, falling back to unverified context on macOS."""
     import urllib.request, ssl
@@ -1415,11 +1460,13 @@ class SessionManager:
         """Restore session state into the agent. Resets backend context for clean isolation."""
         if sid not in self.sessions:
             return False
-        # Guard: don't disrupt a running agent mid-task
-        if ag.is_running:
-            return sid == self.active_sid
         # Save current session's working state before switching
         self.save_current(ag)
+        # Force abort if somehow still running (callers should already have aborted)
+        if ag.is_running:
+            ag.abort()
+            import time as _time
+            _time.sleep(0.3)
         self.active_sid = sid
         s = self.sessions[sid]
         ag.history = list(s.get('history', []))
@@ -1507,6 +1554,11 @@ def api_sessions_switch():
             session_mgr.active_sid = sid
             return jsonify({'ok': True, 'active': sid})
         return jsonify({'ok': False, 'error': get_agent_error()}), 503
+    # Abort running task before switching to prevent freeze
+    if ag.is_running:
+        ag.abort()
+        import time as _time
+        _time.sleep(0.3)
     ok = session_mgr.restore(ag, sid)
     return jsonify({'ok': ok, 'active': session_mgr.active_sid})
 
@@ -1989,7 +2041,13 @@ def api_chat_stream():
     elif sid:
         session_mgr.create('新对话')
         session_mgr.restore(ag, sid)
+    # Auto-abort running task so new message doesn't hang
+    if ag.is_running:
+        ag.abort()
+        import time as _time
+        _time.sleep(0.3)
     if prompt.startswith('/'):
+
         result = _handle_command(ag, prompt)
         return jsonify({'type': 'command', 'content': result})
     # Save original user message before injecting system context

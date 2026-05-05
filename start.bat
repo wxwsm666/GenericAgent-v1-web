@@ -130,37 +130,27 @@ echo.
 :: ---- Step 4: Check mykey.py ----
 if exist "mykey.py" goto :launch
 
-echo ================================================================
-echo   API KEY NOT FOUND
-echo ================================================================
-echo.
 if not exist "mykey_template.py" goto :no_template
 copy "mykey_template.py" "mykey.py" >nul
-echo   A template file has been created: mykey.py
-echo   Opening it in Notepad for you...
+echo [INFO] mykey.py created from template.
+echo   You can configure API Key in the web UI (Settings page).
 echo.
-echo   >>> Replace YOUR_API_KEY_HERE with your real API key <<<
-echo   >>> Save (Ctrl+S) and close Notepad, then re-run start.bat <<<
-echo.
-start notepad "mykey.py"
-pause
-exit /b 0
 
 :no_template
-echo   ERROR: mykey_template.py is also missing.
-echo   The project may be corrupted. Please re-download.
-pause
-exit /b 1
+:: Continue anyway - user can configure via web UI
 
 :: ---- Step 5: Start server ----
 :launch
 echo ================================================================
 echo   Starting Web UI...
 echo.
-echo   Open:  http://localhost:18600
+echo   Browser will open:  http://localhost:18600
 echo   Press Ctrl+C or close this window to stop.
 echo ================================================================
 echo.
+
+:: Open browser
+start "" http://localhost:18600 2>nul
 
 cd frontends
 "..\%VENV_PY%" web_server.py --port 18600

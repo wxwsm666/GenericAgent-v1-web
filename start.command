@@ -54,23 +54,20 @@ if [ ! -f "$SCRIPT_DIR/mykey.py" ]; then
     echo -e "${YELLOW}⚠️  未找到 mykey.py，正在从模板创建...${NC}"
     if [ -f "$SCRIPT_DIR/mykey_template.py" ]; then
         cp "$SCRIPT_DIR/mykey_template.py" "$SCRIPT_DIR/mykey.py"
-        echo -e "${YELLOW}📝 请编辑 mykey.py 填入你的 API Key，然后重新运行本脚本${NC}"
-        open "$SCRIPT_DIR/mykey.py" 2>/dev/null || true
-        read -p "按 Enter 退出..."
-        exit 0
-    else
-        echo -e "${RED}❌ 模板文件也丢失，请手动创建 mykey.py${NC}"
-        read -p "按 Enter 退出..."
-        exit 1
+        echo -e "${YELLOW}📝 已创建 mykey.py，启动后在网页中配置 API Key 即可${NC}"
     fi
 fi
 
 # ── 启动 ──
 echo -e "${GREEN}🚀 启动 Web UI...${NC}"
 echo ""
-echo "  打开浏览器访问:  http://localhost:18600"
+echo "  浏览器将自动打开:  http://localhost:18600"
 echo "  按 Ctrl+C 停止服务"
 echo ""
+
+# Auto-open browser
+sleep 1
+open "http://localhost:18600" 2>/dev/null || true
 
 cd "$SCRIPT_DIR/frontends"
 python3 web_server.py --port 18600

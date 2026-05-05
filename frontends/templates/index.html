@@ -3057,7 +3057,56 @@ async function renderSettings(){
   const s=await api('/settings'),mk=await api('/config/mykey');
   const curFont=localStorage.getItem('hermes-font-size')||'m';
   const fontLabels={s:'小',m:'中',l:'大',xl:'特大'};
-  let h=`<div class="card"><h3>🐾 桌面宠物</h3>
+  // ── Simple API Key Setup (for beginners) ──
+  let h=`<div class="card" style="border-color:var(--accent);background:var(--glass-bg-strong)">
+    <h3>🔑 API Key 配置 <span style="font-size:12px;color:var(--text3);font-weight:400">（新手在这里填 Key 就能用）</span></h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+      <div><label style="font-size:12px;color:var(--text2)">服务商</label>
+        <select id="apSetupProv" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--glass-border);background:var(--glass-bg);color:var(--text);margin-top:4px">
+          <option value="openai">OpenAI (ChatGPT)</option>
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="minimax">MiniMax</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="zhipu">智谱 (GLM)</option>
+          <option value="moonshot">Moonshot (Kimi)</option>
+          <option value="custom">自定义</option>
+        </select></div>
+      <div><label style="font-size:12px;color:var(--text2)">API Key</label>
+        <input id="apSetupKey" type="password" placeholder="sk-..." style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--glass-border);background:var(--glass-bg);color:var(--text);margin-top:4px"></div>
+      <div><label style="font-size:12px;color:var(--text2)">API 地址 (可选)</label>
+        <input id="apSetupBase" placeholder="自动填充" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--glass-border);background:var(--glass-bg);color:var(--text);margin-top:4px"></div>
+      <div><label style="font-size:12px;color:var(--text2)">模型名称 (可选)</label>
+        <input id="apSetupModel" placeholder="自动填充" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--glass-border);background:var(--glass-bg);color:var(--text);margin-top:4px"></div>
+    </div>
+    <div class="row" style="gap:8px;margin-top:12px">
+      <button class="btn acc" onclick="saveApiKeySimple()" style="padding:10px 24px;font-size:14px">💾 保存配置</button>
+      <button class="btn grn" id="apRestartBtn" style="display:none;padding:10px 24px;font-size:14px" onclick="doRestart()">🔄 重启服务</button>
+      <span style="font-size:11px;color:var(--red)">保存后需重启生效</span>
+    </div>
+    <div id="apSetupMsg" style="margin-top:8px;font-size:12px"></div>
+  </div>`;
+  // ── Provider presets ──
+  h+=`<script>
+  window._apPresets={
+    openai:{base:'https://api.openai.com/v1',model:'gpt-4o'},
+    anthropic:{base:'https://api.anthropic.com',model:'claude-sonnet-4-20250514'},
+    minimax:{base:'https://api.minimaxi.com/anthropic',model:'MiniMax-M2.7'},
+    deepseek:{base:'https://api.deepseek.com',model:'deepseek-chat'},
+    zhipu:{base:'https://open.bigmodel.cn/api/paas/v4',model:'glm-4'},
+    moonshot:{base:'https://api.moonshot.cn/v1',model:'moonshot-v1-8k'},
+    custom:{base:'',model:''}
+  };
+  (function(){
+    const sel=document.getElementById('apSetupProv');
+    const base=document.getElementById('apSetupBase');
+    const model=document.getElementById('apSetupModel');
+    if(!sel||!base||!model)return;
+    function update(){const p=window._apPresets[sel.value];if(p){base.placeholder=p.base;model.placeholder=p.model}}
+    sel.addEventListener('change',update);
+    update();
+  })();
+  </`+`script>`;
+  h+=`<div class="card"><h3>🐾 桌面宠物</h3>
     <div class="row" style="gap:8px;flex-wrap:wrap" id="petPicker"></div>
     <p style="font-size:12px;color:var(--text3);margin-top:8px">选择宠物样式 · 拖拽移动 · 点击互动 · 自动显示工作状态</p></div>
     <div class="card"><h3>🔤 字体大小</h3>
@@ -3065,9 +3114,6 @@ async function renderSettings(){
       ${['s','m','l','xl'].map(sz=>`<button class="btn ${curFont===sz?'acc':''}" onclick="setFontSize('${sz}');renderSettings()">${fontLabels[sz]}</button>`).join('')}
     </div>
     <p style="font-size:12px;color:var(--text3);margin-top:8px">当前: ${fontLabels[curFont]||'中'} · 预览: <span style="font-size:calc(14px * ${FONT_SCALES[curFont]||1})">Aa 你好</span></p></div>`;
-  h+=`<div class="card"><h3>⚙️ 配置状态</h3><table>
-    <tr><td style="width:120px">mykey.py</td><td>${s.mykey_exists?'✅ 存在 ('+fmtSize(s.mykey_size)+')':'❌ 未配置'}</td></tr>
-    <tr><td>pyproject.toml</td><td>${s.pyproject?'✅ 存在':'❌ 未找到'}</td></tr></table></div>`;
   h+=`<div class="card"><h3>💿 数据备份与恢复</h3>
     <div class="backup-actions">
       <button class="btn grn" onclick="exportBackup()">📥 完整备份导出</button>
@@ -3081,10 +3127,8 @@ async function renderSettings(){
     <div class="row" style="gap:8px;margin-top:8px">
       <button class="btn acc" onclick="checkUpdate()">🔍 检查更新</button>
       <button class="btn grn" id="doUpdateBtn" style="display:none" onclick="doUpdate()">⬇️ 立即更新</button>
-    </div>
-    <p style="color:var(--text3);font-size:11px;margin-top:8px">需先在 mykey.py 中配置 update_source 指向版本信息JSON地址。更新后需重启服务。</p></div>`;
+    </div></div>`;
   if(mk.content){h+=`<div class="card"><h3>📝 mykey.py 配置 (密钥已脱敏)</h3><textarea id="mkcontent" rows="20">${esc(mk.content)}</textarea><div class="row mt"><button class="btn acc" onclick="saveMyKey()">💾 保存配置</button><span style="font-size:11px;color:var(--red)">⚠ 修改后需重启生效</span></div></div>`}
-  if(s.pyproject){h+=`<div class="card"><h3>pyproject.toml</h3><pre>${esc(s.pyproject)}</pre></div>`}
   C.innerHTML=h;
   // Populate pet picker
   const picker=document.getElementById('petPicker');
@@ -3092,6 +3136,28 @@ async function renderSettings(){
     const names=window.getPetNames(),icons=window.getPetIcons();
     const cur=window.getPetType?window.getPetType():0;
     picker.innerHTML=names.map((n,i)=>`<button class="btn sm ${cur===i?'acc':''}" onclick="window.setPetType(${i});renderSettings()">${icons[i]} ${n}</button>`).join('');
+  }
+}
+async function saveApiKeySimple(){
+  const prov=document.getElementById('apSetupProv').value;
+  const key=document.getElementById('apSetupKey').value.trim();
+  let base=document.getElementById('apSetupBase').value.trim();
+  let model=document.getElementById('apSetupModel').value.trim();
+  const p=window._apPresets[prov]||{};
+  if(!base)base=p.base||'';
+  if(!model)model=p.model||'gpt-4o';
+  if(!key){document.getElementById('apSetupMsg').innerHTML='<span style="color:var(--red)">❌ 请输入 API Key</span>';return}
+  document.getElementById('apSetupMsg').innerHTML='<span style="color:var(--orange)">⏳ 正在保存...</span>';
+  try{
+    const d=await apiPost('/settings/apikey',{provider:prov,api_key:key,api_base:base,model:model});
+    if(d.ok){
+      document.getElementById('apSetupMsg').innerHTML='<span style="color:var(--green)">✅ '+esc(d.message)+'</span>';
+      document.getElementById('apRestartBtn').style.display='';
+    }else{
+      document.getElementById('apSetupMsg').innerHTML='<span style="color:var(--red)">❌ '+esc(d.error||'保存失败')+'</span>';
+    }
+  }catch(e){
+    document.getElementById('apSetupMsg').innerHTML='<span style="color:var(--red)">❌ '+esc(e.message)+'</span>';
   }
 }
 async function saveMyKey(){
