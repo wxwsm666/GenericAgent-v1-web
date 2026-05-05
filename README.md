@@ -81,16 +81,152 @@
 
 ---
 
-## 🚀 2 分钟上手
+## 📦 安装指南
+
+### Mac
+
+**第 1 步：安装 Python**
+
+打开「终端」（启动台搜索"终端"），粘贴运行：
+
+```bash
+brew install python
+```
+
+> 如果提示 `brew: command not found`，先安装 Homebrew：
+> ```bash
+> /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+> ```
+
+验证安装：
+
+```bash
+python3 --version
+```
+
+> ⚠️ 推荐 **Python 3.11 / 3.12**，不要用 3.14。
+
+---
+
+**第 2 步：下载项目**
+
+```bash
+git clone https://github.com/wxwsm666/GenericAgent-v1-web.git
+cd GenericAgent-v1-web
+```
+
+> 不会用 git？打开上面仓库页面，点绿色 **Code** → **Download ZIP**，解压后进入文件夹。
+
+---
+
+**第 3 步：安装依赖**
 
 ```bash
 pip install requests streamlit pywebview
+```
+
+---
+
+**第 4 步：配置 API Key**
+
+```bash
 cp mykey_template.py mykey.py
-# 编辑 mykey.py，填入 API Key
+```
+
+用文本编辑打开 `mykey.py`，填入你的 LLM API Key。最简配置：
+
+```python
+oai_config = {
+    'apikey': 'sk-你的密钥',
+    'apibase': 'http://你的API地址:端口',
+    'model': '模型名称',
+}
+```
+
+> 支持 Claude / GPT / Gemini / Kimi / MiniMax / DeepSeek，兼容 OpenAI 与 Anthropic 接口格式。
+
+---
+
+**第 5 步：启动**
+
+```bash
+python3 launch.pyw
+```
+
+桌面会出现悬浮窗，直接输入任务即可。
+
+---
+
+### Windows
+
+**第 1 步：安装 Python**
+
+1. 打开 [python.org/downloads](https://www.python.org/downloads/)，点击黄色按钮下载
+2. 运行安装包，**⚡ 一定要勾选底部「Add Python to PATH」**
+3. 点击「Install Now」
+
+验证安装：打开命令提示符（Win+R 输入 `cmd`），输入：
+
+```cmd
+python --version
+```
+
+> ⚠️ 推荐 **Python 3.11 / 3.12**，不要用 3.14。
+
+---
+
+**第 2 步：下载项目**
+
+```cmd
+git clone https://github.com/wxwsm666/GenericAgent-v1-web.git
+cd GenericAgent-v1-web
+```
+
+> 不会用 git？打开仓库页面，点绿色 **Code** → **Download ZIP**，解压到你喜欢的文件夹。
+
+---
+
+**第 3 步：安装依赖**
+
+```cmd
+pip install requests streamlit pywebview
+```
+
+---
+
+**第 4 步：配置 API Key**
+
+把 `mykey_template.py` 复制一份，重命名为 `mykey.py`。用记事本打开，填入 API Key：
+
+```python
+oai_config = {
+    'apikey': 'sk-你的密钥',
+    'apibase': 'http://你的API地址:端口',
+    'model': '模型名称',
+}
+```
+
+> 支持 Claude / GPT / Gemini / Kimi / MiniMax / DeepSeek。
+
+---
+
+**第 5 步：启动**
+
+```cmd
 python launch.pyw
 ```
 
-> 支持 Claude / GPT / Gemini / Kimi / MiniMax / DeepSeek，兼容 OpenAI 与 Anthropic 接口。
+---
+
+### 🧪 试运行第一个任务
+
+启动后在输入框里试试：
+
+```
+帮我在桌面创建一个 hello.txt，内容是 Hello World
+```
+
+Agent 会自动执行，验证整条链路是否打通。
 
 ---
 
