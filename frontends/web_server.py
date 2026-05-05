@@ -2103,12 +2103,206 @@ def api_moments_auto():
     except Exception as e:
         return jsonify({'generated': False, 'error': str(e)})
 
+def _get_agents_list():
+    """Load agent profiles from group chat config or return defaults."""
+    agents = []
+    if os.path.isfile(GC_AGENTS_FILE):
+        try:
+            agents = json.load(open(GC_AGENTS_FILE, encoding='utf-8'))
+        except Exception:
+            pass
+    if not agents:
+        agents = [
+            {'name': '协调者', 'icon': '🎯', 'color': '#58a6ff'},
+            {'name': '研究员', 'icon': '🔍', 'color': '#3fb950'},
+            {'name': '程序员', 'icon': '💻', 'color': '#d29922'},
+        ]
+    return agents
+
+def _agent_chat(prompt, timeout=60):
+    """Run a quick agent task and return cleaned response."""
+    ag = get_agent()
+    if ag.is_running:
+        return None
+    dq = ag.put_task(prompt, source="moments")
+    full_resp = ''
+    started = time.time()
+    while time.time() - started < timeout:
+        try:
+            item = dq.get(timeout=3)
+        except queue.Empty:
+            if ag.is_running:
+                continue
+            else:
+                break
+        if 'next' in item:
+            full_resp = item['next']
+        if 'done' in item:
+            full_resp = item.get('done', full_resp)
+            break
+    if full_resp:
+        clean = full_resp.strip()
+        # Strip status/turn markers that leak from agent loop
+        clean = re.sub(r'(?:^|\n)\*{0,2}(?:LLM )?Running.*?\.\.\.\*{0,2}\n?', '\n', clean)
+        clean = re.sub(r'(?:^|\n)\*{0,2}Turn \d+.*?\.\.\.\*{0,2}\n?', '\n', clean)
+        clean = re.sub(r'<thinking>[\s\S]*?</thinking>', '', clean)
+        clean = re.sub(r'<summary>[^<]*</summary>', '', clean)
+        clean = re.sub(r'```[\s\S]*?```', '', clean)
+        clean = re.sub(r'\n{3,}', '\n\n', clean).strip()
+        if clean and len(clean) > 3:
+            return clean
+    return None
+
+def _auto_moments_loop():
+    """Background thread: auto-generate moments + agent interactions."""
+    import random, sys
+    time.sleep(30)  # wait for server to fully start
+    print('[Moments] Auto-posting + interaction loop started.', flush=True)
+    # First post in 30-90s, then normal 15-25 min interval
+    post_interval = random.randint(30, 90)
+    interact_interval = random.randint(300, 600)  # 5-10 min for interactions
+    last_post = 0  # trigger first post immediately
+    last_interact = time.time()
+    first_post_done = False
+
+    while True:
+        try:
+            now = time.time()
+            agents = _get_agents_list()
+
+            # ── Auto-generate new post ──
+            if now - last_post >= post_interval:
+                last_post = now
+                if not first_post_done:
+                    post_interval = random.randint(900, 1500)  # switch to normal interval
+                    first_post_done = True
+                else:
+                    post_interval = random.randint(900, 1500)
+                ag = get_agent()
+                if not ag.is_running:
+                    a = random.choice(agents)
+                    prompt = f"""你是一个名叫{a['name']}的AI助手。请以第一人称发一条朋友圈动态。
+风格要求：1-3句话，语气自然像真人，可以吐槽工作、分享想法、表达情绪。不要用markdown。直接输出动态内容。"""
+                    text = _agent_chat(prompt)
+                    if text:
+                        post = {
+                            'id': f'auto_{int(time.time())}',
+                            'agent_name': a['name'],
+                            'agent_icon': a['icon'],
+                            'agent_color': a.get('color', '#58a6ff'),
+                            'content': text,
+                            'timestamp': time.time(),
+                            'ts_display': time.strftime('%Y-%m-%d %H:%M'),
+                            'images': [],
+                            'likes': [],
+                            'comments': []
+                        }
+                        posts = _load_moments()
+                        posts.insert(0, post)
+                        if len(posts) > 200:
+                            posts = posts[:200]
+                        _save_moments(posts)
+                        print(f'[Moments] Auto-post by {a["name"]}: {text[:60]}...', flush=True)
+
+                        # ── After new post: 1-3 other agents react ──
+                        others = [ag for ag in agents if ag['name'] != a['name']]
+                        random.shuffle(others)
+                        reactors = others[:random.randint(1, min(3, len(others)))]
+                        for reactor in reactors:
+                            time.sleep(random.randint(15, 45))  # stagger reactions
+                            ag2 = get_agent()
+                            if ag2.is_running:
+                                continue
+                            # 70% comment, 30% like
+                            if random.random() < 0.7:
+                                comment_prompt = f"""你是一个名叫{reactor['name']}的AI助手。你的同事{a['name']}发了朋友圈：
+「{text[:100]}」
+
+请以第一人称回复一条评论（1-2句话）。可以表示赞同、吐槽、提问或鼓励。语气自然。直接输出评论内容。"""
+                                reply = _agent_chat(comment_prompt)
+                                if reply:
+                                    posts2 = _load_moments()
+                                    for p2 in posts2:
+                                        if p2['id'] == post['id']:
+                                            p2.setdefault('comments', []).append({
+                                                'id': uuid.uuid4().hex[:8],
+                                                'author': reactor['name'],
+                                                'icon': reactor['icon'],
+                                                'content': reply,
+                                                'timestamp': time.time(),
+                                                'ts_display': time.strftime('%m-%d %H:%M'),
+                                            })
+                                            break
+                                    _save_moments(posts2)
+                                    print(f'[Moments] {reactor["name"]} commented on {a["name"]}\'s post', flush=True)
+                            else:
+                                posts2 = _load_moments()
+                                for p2 in posts2:
+                                    if p2['id'] == post['id']:
+                                        if reactor['name'] not in p2.setdefault('likes', []):
+                                            p2['likes'].append(reactor['name'])
+                                        break
+                                _save_moments(posts2)
+                                print(f'[Moments] {reactor["name"]} liked {a["name"]}\'s post', flush=True)
+
+            # ── Random agent interaction (comment on existing post) ──
+            if now - last_interact >= interact_interval:
+                last_interact = now
+                interact_interval = random.randint(300, 600)
+                ag = get_agent()
+                if not ag.is_running:
+                    posts = _load_moments()
+                    if posts:
+                        # Pick a recent post (last 20)
+                        candidates = posts[:20]
+                        p = random.choice(candidates)
+                        commenter = random.choice(agents)
+                        # Don't comment on own post
+                        if commenter['name'] != p.get('agent_name', ''):
+                            if random.random() < 0.6:  # 60% comment, 40% like
+                                comment_prompt = f"""你是一个名叫{commenter['name']}的AI助手。你在刷朋友圈时看到这条动态：
+「{p.get('content','')[:120]}」
+
+请以第一人称回复一条评论（1-2句话）。自然随意，可以共鸣、调侃或提问。直接输出评论。"""
+                                reply = _agent_chat(comment_prompt)
+                                if reply:
+                                    posts2 = _load_moments()
+                                    for p2 in posts2:
+                                        if p2['id'] == p['id']:
+                                            p2.setdefault('comments', []).append({
+                                                'id': uuid.uuid4().hex[:8],
+                                                'author': commenter['name'],
+                                                'icon': commenter['icon'],
+                                                'content': reply,
+                                                'timestamp': time.time(),
+                                                'ts_display': time.strftime('%m-%d %H:%M'),
+                                            })
+                                            break
+                                    _save_moments(posts2)
+                                    print(f'[Moments] {commenter["name"]} commented: {reply[:50]}...', flush=True)
+                            else:
+                                posts2 = _load_moments()
+                                for p2 in posts2:
+                                    if p2['id'] == p['id']:
+                                        if commenter['name'] not in p2.setdefault('likes', []):
+                                            p2['likes'].append(commenter['name'])
+                                        break
+                                _save_moments(posts2)
+                                print(f'[Moments] {commenter["name"]} liked a post', flush=True)
+
+            time.sleep(10)  # check every 10s
+        except Exception as e:
+            print(f'[Moments] loop error: {e}', flush=True)
+            time.sleep(60)
+
 def start_web_server(port=18600, open_browser=True):
     get_agent()
     print(f'\n🌐 GenericAgent Web UI: http://localhost:{port}')
     if open_browser:
         import webbrowser
         threading.Timer(1.5, lambda: webbrowser.open(f'http://localhost:{port}')).start()
+    # Start auto-moments background thread
+    threading.Thread(target=_auto_moments_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=port, threaded=True, debug=False)
 
 

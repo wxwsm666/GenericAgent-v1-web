@@ -378,7 +378,7 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
 
 /* ═══════════════ CHAT ═══════════════ */
 .session-tabs{
-  display:flex;align-items:center;gap:2px;padding:8px 20px 0;
+  display:flex;align-items:center;gap:4px;padding:8px 16px 0;
   background:var(--glass-bg);
   backdrop-filter:blur(var(--blur-amount)) saturate(180%);
   -webkit-backdrop-filter:blur(var(--blur-amount)) saturate(180%);
@@ -386,27 +386,44 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
   overflow-x:auto;flex-shrink:0;
 }
 .session-tab{
-  padding:9px 16px;font-size:12px;cursor:pointer;
-  border-radius:12px 12px 0 0;display:flex;align-items:center;gap:6px;
+  padding:10px 18px;font-size:13px;cursor:pointer;
+  border-radius:14px 14px 0 0;display:flex;align-items:center;gap:8px;
   color:var(--text2);white-space:nowrap;transition:all var(--transition);
-  border:1px solid transparent;border-bottom:none;user-select:none;
+  border:1.5px solid transparent;border-bottom:none;user-select:none;
+  position:relative;font-weight:500;
+}
+.session-tab::after{
+  content:'';position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+  width:0;height:3px;background:var(--accent);border-radius:3px 3px 0 0;
+  transition:width var(--transition);
 }
 .session-tab:hover{color:var(--text);background:var(--hover-bg)}
+.session-tab:hover::after{width:40%}
 .session-tab.active{
-  color:var(--accent);font-weight:600;
+  color:var(--accent);font-weight:700;
   background:var(--glass-bg-strong);
   border-color:var(--glass-border);
   backdrop-filter:blur(var(--blur-amount)) saturate(180%);
   -webkit-backdrop-filter:blur(var(--blur-amount)) saturate(180%);
+  box-shadow:0 -2px 12px rgba(0,0,0,.06);
 }
-.session-tab .close{width:18px;height:18px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;opacity:0;transition:opacity var(--transition)}
-.session-tab:hover .close{opacity:.5}
-.session-tab .close:hover{opacity:1;background:var(--red);color:#fff}
+.session-tab.active::after{width:60%}
+.session-tab .tab-icon{font-size:16px;line-height:1}
+.session-tab .close{
+  width:22px;height:22px;border-radius:50%;display:flex;
+  align-items:center;justify-content:center;font-size:12px;
+  opacity:.35;transition:all var(--transition);margin-left:2px;
+  color:var(--text2);flex-shrink:0;
+}
+.session-tab:hover .close{opacity:.7}
+.session-tab .close:hover{opacity:1;background:var(--red);color:#fff;transform:scale(1.1)}
 .session-tab-add{
-  padding:8px 12px;font-size:16px;cursor:pointer;color:var(--text3);
-  border-radius:10px;transition:all var(--transition);flex-shrink:0;
+  padding:10px 14px;font-size:20px;cursor:pointer;color:var(--text3);
+  border-radius:14px;transition:all var(--transition);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  line-height:1;font-weight:300;
 }
-.session-tab-add:hover{color:var(--accent);background:var(--hover-bg)}
+.session-tab-add:hover{color:var(--accent);background:var(--hover-bg);transform:scale(1.05)}
 
 /* Chat Area */
 .chat-area{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
@@ -688,7 +705,63 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
 .chat-split .chat-toolbar span{font-size:10px}
 @media(max-width:900px){.chat-split{flex-direction:column!important}.chat-split .chat-pane+.chat-pane{border-left:none;border-top:2px solid var(--glass-border-strong)}}
 
-/* ═══════════════ AGENT MOMENTS (友圈) ═══════════════ */
+/* ═══════════════ PANE HEADER ═══════════════ */
+.chat-pane-header{
+  display:flex;align-items:center;gap:8px;padding:8px 16px;
+  background:var(--glass-bg-strong);border-bottom:1px solid var(--glass-border);
+  flex-shrink:0;cursor:default;transition:all var(--transition);
+}
+.chat-pane-header .pane-icon{font-size:18px;line-height:1}
+.chat-pane-header .pane-name{font-size:13px;font-weight:600;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-pane-header .pane-badge{
+  width:10px;height:10px;border-radius:50%;flex-shrink:0;
+  background:var(--accent);opacity:.7;
+}
+.chat-pane-header .pane-actions{display:flex;gap:2px}
+.chat-pane-header .pane-actions button{
+  width:26px;height:26px;border-radius:8px;border:none;background:transparent;
+  cursor:pointer;font-size:13px;color:var(--text3);display:flex;
+  align-items:center;justify-content:center;transition:all var(--transition);
+}
+.chat-pane-header .pane-actions button:hover{background:var(--hover-bg);color:var(--text)}
+.chat-pane-header:hover{border-color:var(--accent);background:var(--glass-bg-stronger)}
+
+/* ═══════════════ HISTORY PANEL ═══════════════ */
+.history-toggle-bar{
+  display:flex;align-items:center;gap:6px;padding:6px 16px;
+  background:var(--glass-bg);border-top:1px solid var(--glass-border);
+  flex-shrink:0;cursor:pointer;user-select:none;transition:all var(--transition);
+  font-size:11px;color:var(--text2);
+}
+.history-toggle-bar:hover{background:var(--glass-bg-light);color:var(--text)}
+.history-toggle-bar .arrow{transition:transform var(--transition);font-size:10px}
+.history-toggle-bar.open .arrow{transform:rotate(90deg)}
+.history-panel{
+  max-height:0;overflow:hidden;transition:max-height .35s ease;
+  background:var(--glass-bg);border-top:1px solid transparent;
+}
+.history-panel.open{max-height:280px;border-top-color:var(--glass-border);overflow-y:auto}
+.history-item{
+  display:flex;align-items:center;gap:10px;padding:8px 16px;
+  cursor:pointer;transition:all var(--transition);
+  border-bottom:1px solid var(--glass-border);font-size:12px;
+}
+.history-item:hover{background:var(--glass-bg-light)}
+.history-item .hi-icon{font-size:14px;flex-shrink:0;opacity:.7}
+.history-item .hi-preview{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2)}
+.history-item .hi-time{font-size:10px;color:var(--text3);flex-shrink:0}
+.history-empty{text-align:center;padding:20px;color:var(--text3);font-size:12px}
+
+/* Tab highlight flash */
+.session-tab.flash-highlight{
+  animation:tabFlash .6s ease-out;
+  box-shadow:0 0 0 3px var(--accent),0 0 16px var(--accent);
+}
+@keyframes tabFlash{
+  0%{box-shadow:0 0 0 0 var(--accent),0 0 0 var(--accent)}
+  50%{box-shadow:0 0 0 6px var(--accent),0 0 20px var(--accent)}
+  100%{box-shadow:0 0 0 0 transparent,0 0 0 transparent}
+}
 .moments-header{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--glass-border);background:var(--glass-bg-light);backdrop-filter:blur(var(--blur-amount));-webkit-backdrop-filter:blur(var(--blur-amount));position:sticky;top:0;z-index:10}
 .moments-header h2{font-size:18px;margin:0;background:linear-gradient(135deg,var(--accent),#ff6b9d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
 .moments-feed{flex:1;overflow-y:auto;padding:12px 16px}
@@ -718,9 +791,102 @@ code{font-family:var(--font-mono);font-size:12px;background:rgba(124,111,247,0.0
 .moment-cmt-input button{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:11px;cursor:pointer}
 .moment-empty{text-align:center;padding:60px 20px;color:var(--text3)}
 .moment-empty .icon{font-size:48px;margin-bottom:12px}
+
+/* ── Desktop Pet ── */
+#deskPet{position:fixed;z-index:9999;cursor:grab;user-select:none;transition:filter .3s;--pet-bg:#667eea;--pet-bg2:#764ba2;--pet-eye:#1a1a2e;--pet-cheek:rgba(255,150,150,.4);--pet-mouth:rgba(26,26,46,.5);--pet-glow:rgba(102,126,234,.35);--pet-face-r:50%}
+#deskPet:active{cursor:grabbing}
+#deskPet.dragging{cursor:grabbing;filter:brightness(1.1)}
+.pet-body{width:72px;height:72px;position:relative;animation:petFloat 3s ease-in-out infinite}
+.pet-face{width:72px;height:62px;background:linear-gradient(135deg,var(--pet-bg) 0%,var(--pet-bg2) 100%);border-radius:var(--pet-face-r);position:relative;box-shadow:0 8px 24px var(--pet-glow),inset 0 -8px 16px rgba(0,0,0,.1),inset 0 4px 12px rgba(255,255,255,.2);overflow:hidden}
+.pet-eyes{position:absolute;top:20px;left:50%;transform:translateX(-50%);display:flex;gap:14px}
+.pet-eye{width:9px;height:11px;background:var(--pet-eye);border-radius:50%;animation:petBlink 4s infinite}
+.pet-eye:nth-child(2){animation-delay:.15s}
+.pet-mouth{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);width:12px;height:6px;border-bottom:2.5px solid var(--pet-mouth);border-radius:0 0 50% 50%}
+.pet-cheek{position:absolute;top:28px;width:7px;height:5px;background:var(--pet-cheek);border-radius:50%}
+.pet-cheek.left{left:8px}.pet-cheek.right{right:8px}
+.pet-ears{position:absolute;top:-8px;left:50%;transform:translateX(-50%);display:flex;gap:28px;display:none}
+.pet-ear{width:14px;height:20px;background:var(--pet-bg);border-radius:50% 50% 20% 20%}
+.pet-ear.right{background:var(--pet-bg2)}
+.pet-tail{position:absolute;top:10px;right:-16px;width:18px;height:10px;background:var(--pet-bg2);border-radius:0 50% 50% 0;display:none}
+.pet-antler{position:absolute;top:-14px;left:50%;display:none;gap:16px;transform:translateX(-50%)}
+.pet-antler span{width:3px;height:16px;background:var(--pet-eye);border-radius:2px}
+.pet-antler span:first-child{transform:rotate(-15deg)}.pet-antler span:last-child{transform:rotate(15deg)}
+.pet-flower{position:absolute;top:2px;right:8px;font-size:10px;display:none}
+.pet-shadow{width:40px;height:8px;background:rgba(0,0,0,.12);border-radius:50%;margin:4px auto 0;animation:petShadow 3s ease-in-out infinite}
+.pet-bubble{position:absolute;bottom:80px;left:50%;transform:translateX(-50%);background:#fff;color:#333;padding:6px 12px;border-radius:14px;font-size:12px;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.12);opacity:0;pointer-events:none;transition:opacity .25s}
+.pet-bubble.show{opacity:1}
+.pet-bubble::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:6px solid transparent;border-top-color:#fff}
+.pet-status{position:absolute;bottom:-22px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--text2);white-space:nowrap;opacity:.8;display:none}
+.pet-status.show{display:block}
+/* thinking */
+#deskPet.thinking .pet-face{animation:petThink .6s ease-in-out infinite}
+#deskPet.thinking .pet-eyes{animation:petThinkEyes .6s ease-in-out infinite}
+/* sleepy */
+#deskPet.sleepy .pet-eye{height:3px;border-radius:50%;animation:none}
+/* toggle */
+.pet-toggle{position:fixed;bottom:16px;right:16px;z-index:9998;width:28px;height:28px;border-radius:50%;border:1.5px solid var(--glass-border);background:var(--glass-bg);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;opacity:.5;transition:opacity .3s}
+.pet-toggle:hover{opacity:1}
+/* context menu */
+.ctx-item{padding:8px 14px;cursor:pointer;font-size:13px;transition:background .15s}
+.ctx-item:hover{background:var(--glass-bg-light)}
+
+/* ── 10 Pet Types ── */
+/* 0: 默认 - 蓝色团子 */
+.pet-type-0{--pet-bg:#4a90d9;--pet-bg2:#2563eb;--pet-face-r:50% 50% 45% 45%;--pet-glow:rgba(74,144,217,.35)}
+/* 1: 猫咪 - 橘色 + 尖耳 */
+.pet-type-1{--pet-bg:#f4a460;--pet-bg2:#e8923a;--pet-face-r:46% 46% 48% 48%;--pet-glow:rgba(244,164,96,.35)}
+.pet-type-1 .pet-ears{display:flex}.pet-type-1 .pet-ear{clip-path:polygon(50% 0%,0% 100%,100% 100%)}.pet-type-1 .pet-mouth{width:8px}.pet-type-1 .pet-tail{display:block}
+/* 2: 小狗 - 棕色 + 垂耳 */
+.pet-type-2{--pet-bg:#c89460;--pet-bg2:#a0724a;--pet-face-r:48% 48% 45% 45%;--pet-glow:rgba(200,148,96,.35)}
+.pet-type-2 .pet-ears{display:flex;gap:22px;top:-10px}.pet-type-2 .pet-ear{width:16px;height:22px;border-radius:40% 40% 60% 60%}.pet-type-2 .pet-mouth{width:16px;height:8px;border-bottom-width:2px;bottom:10px}
+/* 3: 机器人 - 灰银 + 方眼 */
+.pet-type-3{--pet-bg:#8899aa;--pet-bg2:#667788;--pet-face-r:20%;--pet-glow:rgba(136,153,170,.25)}
+.pet-type-3 .pet-eye{width:8px;height:8px;border-radius:2px;background:#0ff;box-shadow:0 0 6px #0ff}.pet-type-3 .pet-mouth{width:16px;border-bottom-style:dashed}.pet-type-3 .pet-antler{display:flex}
+/* 4: 幽灵 - 白色 + 波纹底 */
+.pet-type-4{--pet-bg:#e8e8f0;--pet-bg2:#d0d0dc;--pet-face-r:48% 48% 30% 30%;--pet-glow:rgba(200,200,220,.3);--pet-eye:#445;--pet-mouth:rgba(68,68,85,.4)}
+.pet-type-4 .pet-face{border-radius:48% 48% 20% 20% / 70% 70% 30% 30%}.pet-type-4 .pet-eye{width:10px;height:12px}.pet-type-4 .pet-cheek{display:none}
+/* 5: 狐狸 - 橙红 + 大三角耳 */
+.pet-type-5{--pet-bg:#e87830;--pet-bg2:#d06020;--pet-face-r:44% 44% 50% 50%;--pet-glow:rgba(232,120,48,.3);--pet-cheek:rgba(255,200,180,.5)}
+.pet-type-5 .pet-ears{display:flex;gap:24px}.pet-type-5 .pet-ear{width:16px;height:24px;clip-path:polygon(50% 0%,0% 100%,100% 100%)}.pet-type-5 .pet-face::after{content:'';position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:28px;height:14px;background:rgba(255,255,255,.35);border-radius:50%}
+/* 6: 兔子 - 粉白 + 长耳 */
+.pet-type-6{--pet-bg:#f8e0e8;--pet-bg2:#f0c8d4;--pet-face-r:50% 50% 45% 45%;--pet-glow:rgba(248,224,232,.4);--pet-eye:#c44;--pet-cheek:rgba(255,180,180,.5)}
+.pet-type-6 .pet-ears{display:flex;gap:10px;top:-14px}.pet-type-6 .pet-ear{width:12px;height:32px;border-radius:50%}.pet-type-6 .pet-mouth{width:6px;border-bottom-width:1.5px}
+/* 7: 熊猫 - 黑白 + 圆脸 */
+.pet-type-7{--pet-bg:#f5f5f5;--pet-bg2:#e8e8e8;--pet-face-r:48% 48% 48% 48%;--pet-glow:rgba(40,40,40,.2);--pet-eye:#222}
+.pet-type-7 .pet-face::before{content:'';position:absolute;top:14px;left:50%;transform:translateX(-50%);width:36px;height:18px;background:rgba(0,0,0,.85);border-radius:50% 50% 50% 50% / 70% 70% 40% 40%}.pet-type-7 .pet-eye{background:#fff;width:7px;height:7px;z-index:1;position:relative}.pet-type-7 .pet-ears{display:flex;gap:28px}.pet-type-7 .pet-ear{width:18px;height:18px;background:#222;border-radius:50%}
+/* 8: 仙人掌 - 绿色 + 花 */
+.pet-type-8{--pet-bg:#5a9e6f;--pet-bg2:#3d7a4f;--pet-face-r:35% 35% 40% 40%;--pet-glow:rgba(90,158,111,.3)}
+.pet-type-8 .pet-face{border:3px solid #3d7a4f;box-shadow:0 6px 20px var(--pet-glow)}.pet-type-8 .pet-eye{width:6px;height:8px;background:#1a3a1a}.pet-type-8 .pet-mouth{width:8px;border-bottom-color:#1a3a1a}.pet-type-8 .pet-flower{display:block}.pet-type-8 .pet-cheek{background:rgba(255,200,200,.5)}
+/* 9: 外星人 - 绿荧光 + 大眼 */
+.pet-type-9{--pet-bg:#3ddc84;--pet-bg2:#2ab86a;--pet-face-r:45% 45% 35% 35%;--pet-glow:rgba(61,220,132,.4);--pet-eye:#111}
+.pet-type-9 .pet-eye{width:12px;height:14px;background:#111;box-shadow:0 0 8px #3ddc84}.pet-type-9 .pet-antler{display:flex;gap:20px;top:-12px}.pet-type-9 .pet-antler span{width:4px;height:8px;background:#3ddc84;border-radius:50%}.pet-type-9 .pet-mouth{width:8px;border-bottom-width:1.5px}
+
+@keyframes petFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes petShadow{0%,100%{transform:scale(1);opacity:.12}50%{transform:scale(.75);opacity:.06}}
+@keyframes petBlink{0%,96%,100%{transform:scaleY(1)}98%{transform:scaleY(.1)}}
+@keyframes petThink{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+@keyframes petThinkEyes{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
 </style>
 </head>
 <body>
+<!-- ═══════ Desktop Pet ═══════ -->
+<div id="deskPet" class="pet-type-0" style="bottom:80px;right:24px">
+  <div class="pet-bubble" id="petBubble"></div>
+  <div class="pet-body">
+    <div class="pet-ears"><div class="pet-ear left"></div><div class="pet-ear right"></div></div>
+    <div class="pet-antler"><span></span><span></span></div>
+    <div class="pet-flower">🌸</div>
+    <div class="pet-tail"></div>
+    <div class="pet-face">
+      <div class="pet-eyes"><div class="pet-eye"></div><div class="pet-eye"></div></div>
+      <div class="pet-cheek left"></div><div class="pet-cheek right"></div>
+      <div class="pet-mouth"></div>
+    </div>
+    <div class="pet-shadow"></div>
+  </div>
+  <div class="pet-status" id="petStatus"></div>
+</div>
+<button class="pet-toggle" id="petToggle" title="隐藏宠物" onclick="togglePet()" style="bottom:16px;right:16px">🐾</button>
 <!-- ═══════════════ SIDEBAR ═══════════════ -->
 <div class="sb" id="sb">
   <div class="sb-logo" onclick="goPage('dashboard')">
@@ -1013,7 +1179,13 @@ async function loadSessions(){
   if(!activeSid || !sessions.find(s=>s.id===activeSid)){
     await createSession('默认对话');
   }
-  if(!chatMsgs[activeSid]) chatMsgs[activeSid] = [];
+  // Fetch messages for all sessions to populate chatMsgs
+  for(const s of sessions){
+    try{
+      const d=await api('/sessions/'+encodeURIComponent(s.id)+'/messages');
+      if(!chatMsgs[s.id]) chatMsgs[s.id]=d.messages||[];
+    }catch(e){if(!chatMsgs[s.id])chatMsgs[s.id]=[]}
+  }
 }
 
 async function createSession(name){
@@ -1027,6 +1199,7 @@ async function deleteSession(sid){
   sessions=sessions.filter(s=>s.id!==sid);
   delete chatMsgs[sid];
   if(activeSid===sid) activeSid=sessions[0]?.id||'';
+  _paneSids=_paneSids.filter(s=>s!==sid);
   if(uploadedFiles.length) uploadedFiles=[];
   renderChatView();
 }
@@ -1034,32 +1207,37 @@ async function switchSession(sid){
   if(sid===activeSid)return;
   await apiPost('/sessions/switch',{session_id:sid});
   activeSid=sid;
-  // Fetch latest messages from server to restore work records
+  // Remove sid from _paneSids if it was assigned to another pane
+  _paneSids=_paneSids.map(s=>s===sid?'':s);
+  // Fetch latest messages from server
   try{
     const d=await api('/sessions/'+encodeURIComponent(sid)+'/messages');
-    chatMsgs[activeSid]=d.messages||[];
-  }catch(e){if(!chatMsgs[activeSid])chatMsgs[activeSid]=[]}
+    chatMsgs[sid]=d.messages||[];
+  }catch(e){if(!chatMsgs[sid])chatMsgs[sid]=[]}
   uploadedFiles=[];
   _curRoundEl=null;
-  renderChatMessages();
+  if(_paneLayout!=='single') renderChatView(); else {renderChatMessages();refreshPaneHeaders();}
   updateSessionTabs();
 }
 async function renameSession(sid){
   const s = sessions.find(x=>x.id===sid); if(!s)return;
   const name = prompt('重命名会话:', s.name);
-  if(name&&name.trim()){await apiPost(`/sessions/${encodeURIComponent(sid)}/rename`,{name:name.trim()});s.name=name.trim();updateSessionTabs()}
+  if(name&&name.trim()){await apiPost(`/sessions/${encodeURIComponent(sid)}/rename`,{name:name.trim()});s.name=name.trim();updateSessionTabs();refreshPaneHeaders()}
 }
 
 function updateSessionTabs(){
   const el=document.getElementById('sessionTabs');
   if(!el)return;
-  el.innerHTML = sessions.map(s=>{
+  const TABS_ICONS=['💬','📝','💡','🔧','📋','🌟','🎯','🧩','📌','🔮','💎','🌈','🎨','📡','🗂️'];
+  el.innerHTML = sessions.map((s,i)=>{
     const active = s.id===activeSid;
+    const icon = s.icon || TABS_ICONS[i % TABS_ICONS.length];
     return `<div class="session-tab${active?' active':''}" onclick="switchSession('${s.id}')" oncontextmenu="event.preventDefault();renameSession('${s.id}')" title="${esc(s.name)}${active?' (当前)':''}">
-      ${esc(s.name.substring(0,20))}${s.name.length>20?'…':''}
-      <span class="close" onclick="event.stopPropagation();deleteSession('${s.id}')">✕</span>
+      <span class="tab-icon">${icon}</span>
+      ${esc(s.name.substring(0,16))}${s.name.length>16?'…':''}
+      <span class="close" onclick="event.stopPropagation();deleteSession('${s.id}')" title="关闭会话">×</span>
     </div>`;
-  }).join('') + `<div class="session-tab-add" onclick="addSession()" title="新建会话">+</div>`;
+  }).join('') + `<div class="session-tab-add" onclick="addSession()" title="新建会话">＋</div>`;
 }
 async function addSession(){
   const name = prompt('会话名称:','新对话');
@@ -1091,7 +1269,7 @@ function renderChatMessages(targetId, msgsOverride){
   }
   el.innerHTML='<div class="fold-all-bar"><button onclick="foldAllRounds(\''+elId+'\')">📁 全部折叠</button><button onclick="expandAllRounds(\''+elId+'\')">📂 全部展开</button></div>';
   const paneIdx = targetId && targetId.startsWith('msgs') ? parseInt(targetId.replace('msgs',''))||0 : 0;
-  const sid = paneIdx > 0 && _paneSids[paneIdx] ? _paneSids[paneIdx] : activeSid;
+  const sid = paneIdx > 0 && _paneSids[paneIdx-1] ? _paneSids[paneIdx-1] : activeSid;
   const saved = JSON.parse(localStorage.getItem('hermes-fold-'+sid)||'{}');
   let rounds=[], cur=null;
   msgs.forEach(m=>{
@@ -1135,7 +1313,7 @@ function appendMsgEl(role,content,ts,targetId){
   }
   if(role==='user'){
     const paneIdx = elId.startsWith('msgs') ? parseInt(elId.replace('msgs',''))||0 : 0;
-    const sid = paneIdx > 0 && _paneSids[paneIdx] ? _paneSids[paneIdx] : activeSid;
+    const sid = paneIdx > 0 && _paneSids[paneIdx-1] ? _paneSids[paneIdx-1] : activeSid;
     const msgs = chatMsgs[sid]||[];
     const foldId = 'fold-round-'+sid+'-'+msgs.length;
     const folder = document.createElement('div');
@@ -1169,10 +1347,11 @@ function appendMsgEl(role,content,ts,targetId){
 }
 function appendMsg(role,content,ts,targetId){
   const paneIdx = targetId && targetId.startsWith('msgs') ? parseInt(targetId.replace('msgs',''))||0 : 0;
-  const sid = paneIdx > 0 && _paneSids[paneIdx] ? _paneSids[paneIdx] : activeSid;
+  const sid = paneIdx > 0 && _paneSids[paneIdx-1] ? _paneSids[paneIdx-1] : activeSid;
   if(!chatMsgs[sid]) chatMsgs[sid]=[];
   chatMsgs[sid].push({role,content,ts:ts||new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})});
   appendMsgEl(role,content,ts,targetId);
+  syncHistoryAfterMsg(sid);
 }
 function toggleRound(foldId,sid){
   const el=document.getElementById(foldId);if(!el)return;
@@ -1223,31 +1402,41 @@ function renderChatView(){
   const layout = PANE_LAYOUTS.find(l=>l.id===_paneLayout)||PANE_LAYOUTS[0];
   const n = layout.panes;
   // Generate pane HTML
+  const TABS_ICONS_ARR=['💬','📝','💡','🔧','📋','🌟','🎯','🧩','📌','🔮','💎','🌈','🎨','📡','🗂️'];
   function paneHtml(i){
-    const sid = i>0 ? (_paneSids[i]||'') : activeSid;
-    const paneLabel = i===0 ? sessions.find(s=>s.id===activeSid)?.name||'' : (sessions.find(s=>s.id===sid)?.name||'窗'+ (i+1));
+    const sid = i>0 ? (_paneSids[i-1]||'') : activeSid;
+    const s = sessions.find(x=>x.id===sid);
+    const paneName = s?.name||('窗'+(i+1));
+    const paneIcon = s?.icon||TABS_ICONS_ARR[i % TABS_ICONS_ARR.length];
     const elId = 'msgs'+(i||'0');
     const inpId = 'cinput'+(i||'0');
     const sendId = 'csend'+(i||'0');
     const stopId = 'cstop'+(i||'0');
+    const histId = 'hist'+(i||'0');
     const sendCall = i===0 ? 'sendChat()' : `sendChat('${elId}')`;
     return `
-      <div class="chat-pane" id="chatPane${i}">
+      <div class="chat-pane" id="chatPane${i}" data-sid="${esc(sid)}" onclick="highlightSessionTab('${esc(sid)}')">
+        <div class="chat-pane-header" title="点击高亮对应标签页">
+          <span class="pane-icon">${paneIcon}</span>
+          <span class="pane-name">${esc(paneName)}</span>
+          <span class="pane-badge" style="background:${s?.color||'var(--accent)'}"></span>
+          <div class="pane-actions">
+            <button onclick="event.stopPropagation();renameSession('${esc(sid)}')" title="重命名">✏️</button>
+            <button onclick="event.stopPropagation();deleteSession('${esc(sid)}')" title="关闭">✕</button>
+          </div>
+        </div>
         <div class="msgs" id="${elId}"></div>
+        <div class="history-toggle-bar" id="${histId}_tgl" onclick="toggleHistoryPanel('${histId}')">
+          <span class="arrow">▶</span> 聊天记录 <span style="font-size:10px;color:var(--text3);margin-left:4px" id="${histId}_cnt">(0条)</span>
+        </div>
+        <div class="history-panel" id="${histId}">
+          <div class="history-empty" id="${histId}_empty">暂无聊天记录</div>
+        </div>
         <div class="chat-input" id="chatInput${i}">
           <div class="row">
             <textarea id="${inpId}" placeholder="输入消息... (Enter发送)" rows="1"></textarea>
             <button class="send" id="${sendId}" onclick="${sendCall}">➤</button>
             <button class="send" id="${stopId}" style="display:none;background:var(--red)" title="停止">⏹</button>
-          </div>
-          <div class="chat-toolbar">
-            <div class="left">
-              <span style="font-size:11px;color:var(--text3)">${esc(paneLabel.substring(0,15))}</span>
-            </div>
-            <div class="right">
-              <button class="btn sm ghost" onclick="downloadCurrentChat('${elId}')" title="导出">💾</button>
-              <button class="btn sm" onclick="clearCurrentChat('${elId}')">🗑</button>
-            </div>
           </div>
         </div>
       </div>`;
@@ -1277,7 +1466,6 @@ function renderChatView(){
     tb.className = 'chat-toolbar';
     tb.style.justifyContent = 'flex-start';
     tb.innerHTML = `<div class="left" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
-      <span style="font-size:11px;color:var(--text3)">${esc((sessions.find(s=>s.id===activeSid)?.name||'').substring(0,15))}</span>
       <button class="btn sm ghost" onclick="document.getElementById('fileInput').click()" title="上传文件">📎</button>
       <button class="btn sm ghost" onclick="pasteScreenshot()" title="粘贴截图(Ctrl+V)">📷</button>
       <button class="btn sm ghost" onclick="downloadCurrentChat('msgs${i}')" title="导出">💾</button>
@@ -1299,7 +1487,7 @@ function renderChatView(){
   // Render messages for each pane
   for(let i=0;i<n;i++){
     const elId = 'msgs'+(i||'0');
-    const sid = i>0 && _paneSids[i] ? _paneSids[i] : activeSid;
+    const sid = i>0 && _paneSids[i-1] ? _paneSids[i-1] : activeSid;
     renderChatMessages(elId, chatMsgs[sid]||[]);
     // Setup input
     const inp=document.getElementById('cinput'+(i||'0'));
@@ -1411,7 +1599,7 @@ async function sendChat(targetId){
   const stopId = 'cstop' + suffix;
   const csendBtn = document.getElementById(btnId);
   const paneIdx = paneNum;
-  const sid = paneIdx > 0 && _paneSids[paneIdx] ? _paneSids[paneIdx] : activeSid;
+  const sid = paneIdx > 0 && _paneSids[paneIdx-1] ? _paneSids[paneIdx-1] : activeSid;
   const inp=document.getElementById(inpId);const msg=(inp?.value||'').trim();if(!msg)return;
   // Auto-abort current streaming task if user sends new message
   if(_streaming[targetId]){
@@ -1450,7 +1638,7 @@ async function sendChat(targetId){
             if(msgEl){const bub=msgEl.querySelector('.bub');if(bub)bub.innerHTML=fmtContent(final);msgEl.removeAttribute('id')}
             else appendMsgEl('assistant',final,ts,targetId);
             if(!chatMsgs[sid])chatMsgs[sid]=[];
-            chatMsgs[sid].push({role:'assistant',content:final,ts})}
+            chatMsgs[sid].push({role:'assistant',content:final,ts});syncHistoryAfterMsg(sid)}
           else if(d.type==='error'){if(thinkEl)thinkEl.remove();appendMsgEl('assistant','❌ '+d.content,ts,targetId)}
         }catch(e){}
       }
@@ -1469,12 +1657,103 @@ function appendThink(targetId){
 async function clearCurrentChat(targetId){
   if(!confirm('确定清空当前会话？'))return;
   const paneIdx = targetId && targetId.startsWith('msgs') ? parseInt(targetId.replace('msgs',''))||0 : 0;
-  const sid = paneIdx > 0 && _paneSids[paneIdx] ? _paneSids[paneIdx] : activeSid;
+  const sid = paneIdx > 0 && _paneSids[paneIdx-1] ? _paneSids[paneIdx-1] : activeSid;
   await apiPost('/chat/clear');
   chatMsgs[sid]=[];
   if(targetId) renderChatMessages(targetId, []);
   else renderChatMessages();
   toast('当前会话已清空','ok');
+}
+
+// ── Pane Header & History ──
+function highlightSessionTab(sid){
+  // Flash the corresponding session tab
+  const tabs = document.querySelectorAll('.session-tab');
+  tabs.forEach(t=>t.classList.remove('flash-highlight'));
+  const tab = document.querySelector(`.session-tab[onclick*="${sid}"]`);
+  if(tab){tab.classList.add('flash-highlight');setTimeout(()=>tab.classList.remove('flash-highlight'),700)}
+}
+function toggleHistoryPanel(histId){
+  const panel = document.getElementById(histId);
+  const tgl = document.getElementById(histId+'_tgl');
+  if(!panel||!tgl)return;
+  const isOpen = panel.classList.toggle('open');
+  tgl.classList.toggle('open',isOpen);
+  if(isOpen){
+    const paneNum = histId.replace('hist','')||'0';
+    const sid = paneNum==='0' ? activeSid : (_paneSids[parseInt(paneNum)-1]||activeSid);
+    refreshHistoryPanel(histId, sid);
+  }
+}
+function refreshHistoryPanel(histId, sid){
+  const panel = document.getElementById(histId);
+  const cntEl = document.getElementById(histId+'_cnt');
+  const emptyEl = document.getElementById(histId+'_empty');
+  if(!panel)return;
+  sid = sid || activeSid;
+  const msgs = chatMsgs[sid]||[];
+  // Group into turns
+  let turns = [], cur = null;
+  msgs.forEach(m=>{
+    if(m.role==='user'){if(cur)turns.push(cur);cur={user:m,assistant:null,ts:m.ts}}
+    else if(m.role==='assistant'&&cur){cur.assistant=m}
+    else{if(cur)turns.push(cur);turns.push({user:m,assistant:null,ts:m.ts});cur=null}
+  });
+  if(cur)turns.push(cur);
+  if(cntEl)cntEl.textContent = `(${turns.length}轮)`;
+  if(!turns.length){
+    panel.innerHTML = '<div class="history-empty">暂无聊天记录</div>';
+    if(emptyEl)emptyEl.style.display='';
+    return;
+  }
+  if(emptyEl)emptyEl.style.display='none';
+  const elId = histId.replace('hist','msgs');
+  panel.innerHTML = turns.map((t,i)=>{
+    const preview = (t.user?.content||t.assistant?.content||'').replace(/<[^>]*>/g,'').substring(0,50);
+    const icon = t.user?.role==='user' ? '👤' : '🤖';
+    return `<div class="history-item" onclick="scrollToTurn('${elId}',${i})" title="点击跳转到此轮对话">
+      <span class="hi-icon">${icon}</span>
+      <span class="hi-preview">${esc(preview)}</span>
+      <span class="hi-time">${t.ts||''}</span>
+    </div>`;
+  }).join('');
+}
+function scrollToTurn(elId, turnIdx){
+  const el = document.getElementById(elId);
+  if(!el)return;
+  // Find the round-fold element
+  const rounds = el.querySelectorAll('.round-fold');
+  if(rounds[turnIdx]){
+    rounds[turnIdx].scrollIntoView({behavior:'smooth',block:'start'});
+    rounds[turnIdx].style.background='var(--glass-bg-strong)';
+    setTimeout(()=>{if(rounds[turnIdx])rounds[turnIdx].style.background=''},1500);
+  }
+}
+// Update pane headers after rename or tab switch
+function refreshPaneHeaders(){
+  const panes = document.querySelectorAll('.chat-pane');
+  panes.forEach(pane=>{
+    const sid = pane.dataset.sid;
+    if(!sid)return;
+    const s = sessions.find(x=>x.id===sid);
+    if(!s)return;
+    const nameEl = pane.querySelector('.pane-name');
+    const iconEl = pane.querySelector('.pane-icon');
+    const badgeEl = pane.querySelector('.pane-badge');
+    if(nameEl)nameEl.textContent = s.name||'';
+    if(iconEl && s.icon)iconEl.textContent = s.icon;
+    if(badgeEl && s.color)badgeEl.style.background = s.color;
+  });
+}
+// Auto-refresh history after messages change
+function syncHistoryAfterMsg(sid){
+  // Refresh all open history panels for this session
+  document.querySelectorAll('.history-panel.open').forEach(panel=>{
+    const histId = panel.id;
+    const paneNum = histId.replace('hist','')||'0';
+    const paneSid = paneNum==='0' ? activeSid : (_paneSids[parseInt(paneNum)-1]||activeSid);
+    if(paneSid===sid)refreshHistoryPanel(histId, sid);
+  });
 }
 
 // ═══════════════ RIGHT PANEL ═══════════════
@@ -2456,7 +2735,10 @@ async function renderSettings(){
   const s=await api('/settings'),mk=await api('/config/mykey');
   const curFont=localStorage.getItem('hermes-font-size')||'m';
   const fontLabels={s:'小',m:'中',l:'大',xl:'特大'};
-  let h=`<div class="card"><h3>🔤 字体大小</h3>
+  let h=`<div class="card"><h3>🐾 桌面宠物</h3>
+    <div class="row" style="gap:8px;flex-wrap:wrap" id="petPicker"></div>
+    <p style="font-size:12px;color:var(--text3);margin-top:8px">选择宠物样式 · 拖拽移动 · 点击互动 · 自动显示工作状态</p></div>
+    <div class="card"><h3>🔤 字体大小</h3>
     <div class="row" style="gap:8px">
       ${['s','m','l','xl'].map(sz=>`<button class="btn ${curFont===sz?'acc':''}" onclick="setFontSize('${sz}');renderSettings()">${fontLabels[sz]}</button>`).join('')}
     </div>
@@ -2475,6 +2757,13 @@ async function renderSettings(){
   if(mk.content){h+=`<div class="card"><h3>📝 mykey.py 配置 (密钥已脱敏)</h3><textarea id="mkcontent" rows="20">${esc(mk.content)}</textarea><div class="row mt"><button class="btn acc" onclick="saveMyKey()">💾 保存配置</button><span style="font-size:11px;color:var(--red)">⚠ 修改后需重启生效</span></div></div>`}
   if(s.pyproject){h+=`<div class="card"><h3>pyproject.toml</h3><pre>${esc(s.pyproject)}</pre></div>`}
   C.innerHTML=h;
+  // Populate pet picker
+  const picker=document.getElementById('petPicker');
+  if(picker&&window.getPetNames){
+    const names=window.getPetNames(),icons=window.getPetIcons();
+    const cur=window.getPetType?window.getPetType():0;
+    picker.innerHTML=names.map((n,i)=>`<button class="btn sm ${cur===i?'acc':''}" onclick="window.setPetType(${i});renderSettings()">${icons[i]} ${n}</button>`).join('');
+  }
 }
 async function saveMyKey(){
   const content=document.getElementById('mkcontent').value;
@@ -2595,7 +2884,7 @@ function downloadLog(filename){
 }
 async function downloadCurrentChat(targetId){
   const paneIdx = targetId && targetId.startsWith('msgs') ? parseInt(targetId.replace('msgs',''))||0 : 0;
-  const sid = paneIdx > 0 && _paneSids[paneIdx] ? _paneSids[paneIdx] : activeSid;
+  const sid = paneIdx > 0 && _paneSids[paneIdx-1] ? _paneSids[paneIdx-1] : activeSid;
   const msgs = chatMsgs[sid]||[];
   if(!msgs.length){toast('无聊天记录可保存','err');return}
   // Build markdown text
@@ -2754,6 +3043,213 @@ async function abortTask(){
 }
 refreshStatus();setInterval(refreshStatus,8000);
 goPage('dashboard');
+
+// ═══════ Desktop Pet ═══════
+(function(){
+const pet=document.getElementById('deskPet');
+const bubble=document.getElementById('petBubble');
+const statusEl=document.getElementById('petStatus');
+const toggle=document.getElementById('petToggle');
+let dragOffX=0,dragOffY=0,isDrag=false,petVisible=true,mood=50,isPlaying=false;
+const MSGS=[
+  '你好呀~','今天也要加油哦','我在看着你哟','有我在呢','主人好！',
+  '有什么需要帮忙的吗？','该休息一下啦','(。-ω-)zzz','棒棒的！',
+  '又来了新消息吗？','需要我帮忙吗？','✨','加油！','(◕‿◕)',
+];
+const EAT_MSGS=['好吃好吃！','再来一口~','🍖 美味！','还要还要！','谢谢款待！'];
+const PLAY_MSGS=['好玩！','再来一次！','哈哈哈~','🎾 接住！','开心！'];
+
+// ── Pet types ──
+const PET_NAMES=['团子','猫咪','小狗','机器人','幽灵','狐狸','兔子','熊猫','仙人掌','外星人'];
+const PET_ICONS=['🔵','🐱','🐶','🤖','👻','🦊','🐰','🐼','🌵','👽'];
+let petType=parseInt(localStorage.getItem('hermes-pet-type')||'0')||0;
+function setPetType(t){
+  petType=t;
+  pet.className='pet-type-'+t;
+  localStorage.setItem('hermes-pet-type',t);
+}
+setPetType(petType);
+
+function say(msg,dur){
+  bubble.textContent=msg;bubble.classList.add('show');
+  clearTimeout(bubble._t);bubble._t=setTimeout(()=>bubble.classList.remove('show'),dur||2800);
+}
+
+// ── Mood system ──
+function changeMood(delta){
+  mood=Math.max(0,Math.min(100,mood+delta));
+  const emoji=mood>80?'😄':mood>60?'😊':mood>40?'😐':mood>20?'😞':'😢';
+  statusEl.textContent=statusEl.textContent.replace(/[😄😊😐😞😢]/,'')+emoji;
+  localStorage.setItem('hermes-pet-mood',mood);
+}
+mood=parseInt(localStorage.getItem('hermes-pet-mood')||'50')||50;
+setInterval(()=>changeMood(-1),120000); // mood slowly decays
+
+// ── Floating emoji particles ──
+function spawnParticles(emoji,count){
+  for(let i=0;i<count;i++){
+    const p=document.createElement('span');
+    p.textContent=emoji;p.style.cssText=`position:fixed;z-index:10000;font-size:16px;pointer-events:none;left:${pet.getBoundingClientRect().left+32}px;top:${pet.getBoundingClientRect().top}px;transition:all ${.6+Math.random()*.6}s ease-out;opacity:1`;
+    document.body.appendChild(p);
+    requestAnimationFrame(()=>{
+      p.style.transform=`translate(${(Math.random()-.5)*80}px,${-40-Math.random()*60}px) scale(${.5+Math.random()})`;
+      p.style.opacity='0';
+    });
+    setTimeout(()=>p.remove(),1500);
+  }
+}
+
+// ── Feed ──
+function feedPet(){
+  if(isPlaying)return;
+  changeMood(20);
+  say(EAT_MSGS[Math.floor(Math.random()*EAT_MSGS.length)],2200);
+  pet.style.transition='transform .12s';
+  pet.style.transform='scale(1.15)';
+  // Chewing animation
+  let chews=0;
+  const chew=setInterval(()=>{
+    pet.style.transform=chews%2?'scale(1.2)':'scale(1.05)';
+    if(++chews>5){clearInterval(chew);pet.style.transform='scale(1)';setTimeout(()=>pet.style.transition='',200)}
+  },180);
+  spawnParticles('❤️',5);
+}
+
+// ── Play ──
+function playWithPet(){
+  if(isPlaying)return;
+  isPlaying=true;changeMood(25);
+  say(PLAY_MSGS[Math.floor(Math.random()*PLAY_MSGS.length)],2000);
+  spawnParticles('✨',8);
+  // Rapid bouncing
+  pet.style.transition='transform .1s';
+  let bounces=0;
+  const bounce=setInterval(()=>{
+    const s=1+Math.abs(Math.sin(bounces*.8))*.4;
+    pet.style.transform=`scale(${s}) translateY(${-Math.sin(bounces*1.2)*12}px)`;
+    if(++bounces>10){clearInterval(bounce);pet.style.transform='scale(1) translateY(0)';setTimeout(()=>{pet.style.transition='';isPlaying=false},200)}
+  },120);
+}
+
+// ── Right-click context menu ──
+let ctxMenu=null;
+function hideCtxMenu(){
+  if(ctxMenu){ctxMenu.remove();ctxMenu=null}
+}
+pet.addEventListener('contextmenu',e=>{
+  e.preventDefault();hideCtxMenu();
+  ctxMenu=document.createElement('div');
+  const moodEmoji=mood>80?'😄':mood>60?'😊':mood>40?'😐':mood>20?'😞':'😢';
+  ctxMenu.innerHTML=`
+    <div style="padding:6px 12px;font-size:11px;color:var(--text3);border-bottom:1px solid var(--glass-border)">${moodEmoji} 心情 ${mood}%</div>
+    <div class="ctx-item" id="ctx-feed">🍖 喂食 (+20)</div>
+    <div class="ctx-item" id="ctx-play">🎾 玩耍 (+25)</div>
+    <div class="ctx-item" id="ctx-type">🔄 换装</div>
+    <div class="ctx-item" id="ctx-hide">${petVisible?'🙈 隐藏':'👀 显示'}</div>`;
+  ctxMenu.style.cssText='position:fixed;z-index:10001;background:var(--glass-bg);backdrop-filter:blur(16px);border:1px solid var(--glass-border);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.2);min-width:130px;overflow:hidden';
+  ctxMenu.style.left=e.clientX+'px';ctxMenu.style.top=e.clientY+'px';
+  document.body.appendChild(ctxMenu);
+  document.getElementById('ctx-feed').onclick=()=>{feedPet();hideCtxMenu()};
+  document.getElementById('ctx-play').onclick=()=>{playWithPet();hideCtxMenu()};
+  document.getElementById('ctx-type').onclick=()=>{
+    const t=(petType+1)%10;window.setPetType(t);
+    setTimeout(()=>{
+      const pp=document.getElementById('petPicker');
+      if(pp){const names=window.getPetNames(),icons=window.getPetIcons();pp.innerHTML=names.map((n,i)=>`<button class="btn sm ${t===i?'acc':''}" onclick="window.setPetType(${i});renderSettings()">${icons[i]} ${n}</button>`).join('')}
+    },100);
+    hideCtxMenu();
+  };
+  document.getElementById('ctx-hide').onclick=()=>{window.togglePet();hideCtxMenu()};
+  setTimeout(()=>document.addEventListener('click',hideCtxMenu,{once:true}),100);
+});
+
+// ── Status display ──
+let wasRunning=false;
+async function updatePetStatus(){
+  try{
+    const r=await fetch('/api/status');const d=await r.json();
+    if(d.running){
+      pet.classList.add('thinking');
+      statusEl.textContent='⚡ 工作中...';
+      statusEl.classList.add('show');
+      wasRunning=true;
+    }else{
+      pet.classList.remove('thinking');
+      if(wasRunning){
+        changeMood(5);
+        spawnParticles('🎉',6);
+        say('任务完成啦~',2500);
+      }
+      wasRunning=false;
+      const count=document.querySelectorAll('.session-tab').length||0;
+      statusEl.textContent=`${mood>80?'😄':mood>60?'😊':mood>40?'😐':mood>20?'😞':'😢'} ${count>0?'空闲 · '+count+'会话':'空闲'}`;
+      statusEl.classList.add('show');
+      setTimeout(()=>statusEl.classList.remove('show'),10000);
+    }
+  }catch(e){}
+}
+updatePetStatus();setInterval(updatePetStatus,8000);
+
+// ── Drag ──
+pet.addEventListener('mousedown',e=>{
+  if(e.button!==0)return;
+  const r=pet.getBoundingClientRect();isDrag=true;dragOffX=e.clientX-r.left;dragOffY=e.clientY-r.top;
+  pet.classList.add('dragging');pet.style.right='auto';pet.style.bottom='auto';
+  pet.style.left=r.left+'px';pet.style.top=r.top+'px';
+  e.preventDefault();
+});
+document.addEventListener('mousemove',e=>{
+  if(!isDrag)return;
+  pet.style.left=(e.clientX-dragOffX)+'px';pet.style.top=(e.clientY-dragOffY)+'px';
+});
+document.addEventListener('mouseup',()=>{
+  if(!isDrag)return;
+  isDrag=false;pet.classList.remove('dragging');
+});
+
+// ── Click interact ──
+pet.addEventListener('click',e=>{
+  if(isDrag)return;
+  changeMood(3);
+  say(MSGS[Math.floor(Math.random()*MSGS.length)]);
+  pet.style.transition='transform .15s';
+  pet.style.transform='scale(1.25)';
+  setTimeout(()=>{pet.style.transform='scale(1)';setTimeout(()=>pet.style.transition='',200)},150);
+  spawnParticles('💬',2);
+});
+
+// ── Idle random say ──
+setInterval(()=>{
+  if(!petVisible||pet.classList.contains('thinking')||isPlaying)return;
+  if(Math.random()<.10) say(MSGS[Math.floor(Math.random()*MSGS.length)]);
+},20000);
+
+// ── Sleepy at night ──
+function updateSleepy(){
+  const h=new Date().getHours();
+  pet.classList.toggle('sleepy',h>=23||h<6);
+}
+updateSleepy();setInterval(updateSleepy,600000);
+
+// ── Toggle visibility ──
+window.togglePet=function(){
+  petVisible=!petVisible;
+  pet.style.display=petVisible?'':'none';
+  toggle.textContent=petVisible?'🐾':'👣';
+  toggle.title=petVisible?'隐藏宠物':'显示宠物';
+};
+
+// ── Expose for settings ──
+window.getPetType=()=>petType;
+window.getPetIcons=()=>PET_ICONS;
+window.getPetNames=()=>PET_NAMES;
+window.setPetType=function(t){
+  setPetType(t);
+  if(t===0) PET_ICONS[0]='🔵';
+  say(PET_ICONS[t]+' '+PET_NAMES[t]+'来啦~',2000);
+  spawnParticles('✨',4);
+};
+})();
 </script>
 </body>
 </html>
