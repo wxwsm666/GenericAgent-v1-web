@@ -427,7 +427,7 @@ native_oai_config = {
 # ══════════════════════════════════════════════════════════════════════════════
 #  在线更新配置（可选）
 #  设置后可在 Web UI 的「配置」页面检查并一键更新到最新版本
-#  工作原理：GET update_source 指向的 URL → 获取最新版本号和更新信息 → 对比本地版本 → git pull 或下载 zip 更新
+#  工作原理：GET update_source 指向的 URL → 获取最新版本号 → 下载 zip 覆盖更新
 # ══════════════════════════════════════════════════════════════════════════════
 update_source = 'https://raw.githubusercontent.com/wxwsm666/GenericAgent-v1-web/main/version.json'
 update_channel = 'stable'  # 'stable' 或 'beta'

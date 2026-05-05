@@ -1,6 +1,7 @@
 @echo off
+chcp 65001 >nul 2>&1
 :: ============================================================
-::  GenericAgent - Windows 11 One-Click Launcher
+::  GenericAgent - Windows Launcher
 ::  Double-click start.bat to run.
 :: ============================================================
 
@@ -16,32 +17,35 @@ echo.
 :: ---- Step 1: Find Python 3.10+ ----
 set PYTHON_CMD=
 
-:: Method 1: py launcher (most reliable on Windows 11)
+:: Method 1: py launcher (most reliable on Windows)
 where py >nul 2>&1
-if not errorlevel 1 goto :try_py
-goto :try_python3
+if not errorlevel 1 (
+    py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
+    if not errorlevel 1 (
+        set PYTHON_CMD=py
+        goto :python_ok
+    )
+)
 
-:try_py
-py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
-if errorlevel 1 goto :try_python3
-set PYTHON_CMD=py
-goto :python_ok
-
-:try_python3
+:: Method 2: python3
 where python3 >nul 2>&1
-if errorlevel 1 goto :try_python
-python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
-if errorlevel 1 goto :try_python
-set PYTHON_CMD=python3
-goto :python_ok
+if not errorlevel 1 (
+    python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
+    if not errorlevel 1 (
+        set PYTHON_CMD=python3
+        goto :python_ok
+    )
+)
 
-:try_python
+:: Method 3: python
 where python >nul 2>&1
-if errorlevel 1 goto :python_missing
-python -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
-if errorlevel 1 goto :python_missing
-set PYTHON_CMD=python
-goto :python_ok
+if not errorlevel 1 (
+    python -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" >nul 2>&1
+    if not errorlevel 1 (
+        set PYTHON_CMD=python
+        goto :python_ok
+    )
+)
 
 :python_missing
 echo [WARN] Python 3.10+ not found. Trying auto-install...
@@ -143,7 +147,7 @@ echo.
 
 :check_update_source
 :: Auto-add update_source for existing users upgrading from old versions
-findstr /R "^update_source" mykey.py >nul 2>&1
+findstr /C:"update_source =" mykey.py >nul 2>&1
 if errorlevel 1 (
     echo [INFO] Old mykey.py detected, adding update_source...
     echo. >> mykey.py
@@ -159,6 +163,7 @@ if errorlevel 1 (
 :: ---- Step 5: Start server ----
 :launch
 set PORT=18600
+set "PROJECT_DIR=%~dp0"
 
 :: Kill any existing process on our port
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%PORT%" ^| findstr "LISTENING" 2^>nul') do (
@@ -175,11 +180,12 @@ echo   Press Ctrl+C or close this window to stop.
 echo ================================================================
 echo.
 
-cd frontends
+cd /d "%PROJECT_DIR%frontends"
 :: Try tray_app first (stays in system tray for easy re-access)
-"..\%VENV_PY%" ..\tray_app.py --port %PORT% 2>nul || (
+"%PROJECT_DIR%.venv\Scripts\python.exe" "%PROJECT_DIR%tray_app.py" --port %PORT% 2>nul
+if errorlevel 1 (
   :: Fallback: run web server directly
-  "..\%VENV_PY%" web_server.py --port %PORT%
+  "%PROJECT_DIR%.venv\Scripts\python.exe" "%PROJECT_DIR%frontends\web_server.py" --port %PORT%
 )
 
 echo.

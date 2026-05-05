@@ -1074,7 +1074,7 @@ def api_update_fix_source():
 
 @app.route('/api/update/run', methods=['POST'])
 def api_update_run():
-    """Execute the update: git pull or download zip, then reinstall deps if needed."""
+    """Execute the update: download zip from GitHub, extract, and replace files."""
     update_url, channel = _get_update_source()
     if not update_url:
         return jsonify({'ok': False, 'error': '未配置更新源'})
@@ -1086,57 +1086,57 @@ def api_update_run():
         return jsonify({'ok': False, 'error': f'获取更新信息失败: {str(e)}'})
     remote_ver = info.get('version', '')
     download_url = info.get('download_url', '')
-    is_git = os.path.isdir(os.path.join(project_dir, '.git'))
     result = {'ok': True, 'version': remote_ver, 'steps': []}
+    if not download_url:
+        return jsonify({'ok': False, 'error': '未找到下载地址，请检查更新源配置'})
     try:
-        if is_git:
-            # Git-based update
-            r = subprocess.run(['git', 'pull', '--ff-only'], cwd=project_dir,
-                               capture_output=True, text=True, timeout=60)
-            result['steps'].append({'step': 'git pull', 'ok': r.returncode == 0, 'output': r.stdout[-300:]})
-            if r.returncode != 0:
-                result['steps'].append({'step': 'git pull', 'ok': False, 'output': r.stderr[-300:]})
-                result['ok'] = False
-                return jsonify(result)
-        elif download_url:
-            # Zip-based update
-            import tempfile, shutil
-            zip_path = os.path.join(tempfile.gettempdir(), 'genericagent_update.zip')
-            urllib.request.urlretrieve(download_url, zip_path)
-            result['steps'].append({'step': '下载更新包', 'ok': True})
-            # Extract to temp dir, then copy over
-            extract_dir = os.path.join(tempfile.gettempdir(), 'genericagent_update_extract')
-            if os.path.isdir(extract_dir):
-                shutil.rmtree(extract_dir)
-            shutil.unpack_archive(zip_path, extract_dir)
-            result['steps'].append({'step': '解压更新包', 'ok': True})
-            # Find the project root in the extracted files
-            # Zip might have a top-level folder; find web_server.py to locate root
-            extracted_root = extract_dir
-            for root, dirs, files in os.walk(extract_dir):
-                if 'web_server.py' in files and 'start.bat' in files:
-                    extracted_root = root
-                    break
-            # Copy files (overwrite), but preserve mykey.py and .venv
-            preserve = {'mykey.py', '.venv', 'temp', '.git'}
-            for item in os.listdir(extracted_root):
-                if item in preserve:
-                    continue
-                src = os.path.join(extracted_root, item)
-                dst = os.path.join(project_dir, item)
-                if os.path.isdir(src):
-                    if os.path.isdir(dst):
-                        shutil.rmtree(dst)
-                    shutil.copytree(src, dst)
-                else:
-                    shutil.copy2(src, dst)
-            result['steps'].append({'step': '覆盖文件', 'ok': True})
-            # Cleanup
+        # Always use zip-based update (more reliable for non-technical users)
+        import tempfile, shutil
+        zip_path = os.path.join(tempfile.gettempdir(), 'genericagent_update.zip')
+        urllib.request.urlretrieve(download_url, zip_path)
+        result['steps'].append({'step': '下载更新包', 'ok': True})
+        # Extract to temp dir, then copy over
+        extract_dir = os.path.join(tempfile.gettempdir(), 'genericagent_update_extract')
+        if os.path.isdir(extract_dir):
+            shutil.rmtree(extract_dir)
+        shutil.unpack_archive(zip_path, extract_dir)
+        result['steps'].append({'step': '解压更新包', 'ok': True})
+        # Find the project root in the extracted files
+        extracted_root = extract_dir
+        for root, dirs, files in os.walk(extract_dir):
+            if 'web_server.py' in files:
+                extracted_root = root
+                break
+        # Copy files (overwrite), but preserve mykey.py and .venv
+        preserve = {'mykey.py', '.venv', '__pycache__'}
+        for item in os.listdir(extracted_root):
+            if item in preserve:
+                continue
+            src = os.path.join(extracted_root, item)
+            dst = os.path.join(project_dir, item)
+            if os.path.isdir(src):
+                if os.path.isdir(dst):
+                    shutil.rmtree(dst)
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+        result['steps'].append({'step': '覆盖文件', 'ok': True})
+        # Clear all .pyc caches to ensure new code is used
+        for root, dirs, files in os.walk(project_dir):
+            if '__pycache__' in dirs:
+                pycache = os.path.join(root, '__pycache__')
+                try:
+                    shutil.rmtree(pycache)
+                except Exception:
+                    pass
+        result['steps'].append({'step': '清理缓存', 'ok': True})
+        # Cleanup temp files
+        try:
             os.remove(zip_path)
             shutil.rmtree(extract_dir)
-        else:
-            return jsonify({'ok': False, 'error': '无可用的更新方式（非Git仓库且未提供下载地址）'})
-        # Step 2: Check if dependencies changed
+        except Exception:
+            pass
+        # Step 2: Reinstall dependencies
         req_file = os.path.join(project_dir, 'requirements.txt')
         deps_flag = os.path.join(project_dir, '.venv', '.deps_installed')
         if os.path.isfile(req_file):
@@ -1144,7 +1144,7 @@ def api_update_run():
                           cwd=project_dir, timeout=120)
             result['steps'].append({'step': '更新依赖', 'ok': True})
         elif os.path.isfile(deps_flag):
-            os.remove(deps_flag)  # trigger reinstall on next start
+            os.remove(deps_flag)
             result['steps'].append({'step': '标记依赖需刷新', 'ok': True})
         result['need_restart'] = True
         return jsonify(result)
@@ -1156,6 +1156,14 @@ def api_update_restart():
     """Restart the web server (cross-platform)."""
     def _restart():
         time.sleep(0.5)
+        # Clear .pyc caches before restart to ensure fresh code
+        import shutil
+        try:
+            for root, dirs, files in os.walk(project_dir):
+                if '__pycache__' in dirs:
+                    shutil.rmtree(os.path.join(root, '__pycache__'), ignore_errors=True)
+        except Exception:
+            pass
         # Re-exec the same command that started this server
         script = os.path.join(script_dir, 'web_server.py')
         args = [sys.executable, script, '--port', str(_get_port())]
