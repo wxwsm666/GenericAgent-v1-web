@@ -1798,6 +1798,20 @@ class SessionManager:
             return True
         return False
 
+    def batch_delete(self, sids):
+        """Delete multiple sessions. Returns count of actually deleted."""
+        deleted = 0
+        for sid in list(sids):
+            if sid in self.sessions:
+                del self.sessions[sid]
+                if self.active_sid == sid:
+                    self.active_sid = None
+                deleted += 1
+        if self.active_sid is None and self.sessions:
+            self.active_sid = next(iter(self.sessions))
+        self._autosave()
+        return deleted
+
     def rename(self, sid, name):
         if sid in self.sessions:
             self.sessions[sid]['name'] = name
@@ -1924,6 +1938,35 @@ def api_sessions_switch():
         return jsonify({'ok': False, 'error': get_agent_error()}), 503
     ok = session_mgr.restore(ag, sid)
     return jsonify({'ok': ok, 'active': session_mgr.active_sid})
+
+@app.route('/api/sessions/batch-delete', methods=['POST'])
+def api_sessions_batch_delete():
+    """Delete multiple sessions at once."""
+    sids = (request.json or {}).get('ids', [])
+    if not sids:
+        return jsonify({'ok': False, 'error': '未提供要删除的会话ID'}), 400
+    # Don't allow deleting all sessions
+    remaining = [s for s in session_mgr.sessions if s not in sids]
+    if not remaining:
+        return jsonify({'ok': False, 'error': '至少保留一个会话'})
+    deleted = session_mgr.batch_delete(sids)
+    return jsonify({'ok': True, 'deleted': deleted, 'active': session_mgr.active_sid})
+
+@app.route('/api/logs/batch-delete', methods=['POST'])
+def api_logs_batch_delete():
+    """Delete multiple model response log files."""
+    paths = (request.json or {}).get('paths', [])
+    if not paths:
+        return jsonify({'ok': False, 'error': '未提供要删除的日志路径'}), 400
+    deleted = 0
+    for p in paths:
+        try:
+            if os.path.isfile(p) and 'model_responses' in p:
+                os.remove(p)
+                deleted += 1
+        except Exception:
+            pass
+    return jsonify({'ok': True, 'deleted': deleted})
 
 @app.route('/api/sessions/<sid>/messages')
 def api_sessions_messages(sid):

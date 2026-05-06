@@ -2101,27 +2101,44 @@ function toggleRightPanel() {
   if (localStorage.getItem('hermes-rp-open') === 'true') toggleRightPanel();
 })();
 
+let _selectedRPSessions = new Set();
+
 async function refreshRPSessions() {
   const d = await api('/sessions/list');
-  const sessions = d.sessions || [];
+  const curSessions = d.sessions || [];
   const active = d.active || '';
   const q = (document.getElementById('rpSearch')?.value || '').toLowerCase();
-  const filtered = q ? sessions.filter(s => s.name.toLowerCase().includes(q)) : sessions;
+  const filtered = q ? curSessions.filter(s => s.name.toLowerCase().includes(q)) : curSessions;
   const el = document.getElementById('rpList');
   if (!el) return;
+  // Batch action bar
+  const allSelected = filtered.length > 0 && filtered.every(s => _selectedRPSessions.has(s.id));
+  const someSelected = filtered.some(s => _selectedRPSessions.has(s.id));
+  let barHTML = `<div class="rp-batch-bar" id="rpBatchBar" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--glass-border);background:var(--glass-bg)">
+    <label class="cb-label" style="cursor:pointer;font-size:12px"><input type="checkbox" ${allSelected?'checked':''} onchange="toggleSelectAllRPSessions(this.checked)" style="margin-right:4px">全选</label>
+    <button class="btn red sm" ${someSelected?'':'disabled'} onclick="batchDeleteRPSessions()">🗑 删除选中${_selectedRPSessions.size>0?'('+_selectedRPSessions.size+')':''}</button>
+    <span style="font-size:11px;color:var(--text3);flex:1">${filtered.length}个会话</span>
+    ${_selectedRPSessions.size>0?`<button class="btn sm ghost" onclick="_selectedRPSessions.clear();refreshRPSessions()">取消</button>`:''}
+  </div>`;
   if (!filtered.length) {
-    el.innerHTML = '<div class="empty" style="padding:20px"><p>无会话</p></div>';
+    el.innerHTML = barHTML + '<div class="empty" style="padding:20px"><p>无会话</p></div>';
     return;
   }
-  el.innerHTML = filtered.map(s => {
+  el.innerHTML = barHTML + filtered.map(s => {
     const isActive = s.id === active;
     const msgCount = (s.messages || []).length;
     const lastMsg = s.messages?.slice(-1)[0];
     const preview = lastMsg ? lastMsg.content.substring(0, 40) : '';
-    return `<div class="rp-item${isActive ? ' active' : ''}" onclick="restoreRPSession('${s.id}')">
-      <div class="rp-name">${esc(s.name)}</div>
-      <div class="rp-meta"><span>${msgCount} 条消息</span><span>${fmtTime(s.created_at)}</span></div>
-      ${preview ? `<div style="font-size:11px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px">${esc(preview)}</div>` : ''}
+    const checked = _selectedRPSessions.has(s.id) ? ' checked' : '';
+    return `<div class="rp-item${isActive ? ' active' : ''}">
+      <label class="rp-check" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer" onclick="event.stopPropagation()">
+        <input type="checkbox" ${checked} onchange="toggleRPSession('${s.id}',this.checked)" style="margin-top:3px;flex-shrink:0">
+        <div style="flex:1;min-width:0" onclick="restoreRPSession('${s.id}')">
+          <div class="rp-name">${esc(s.name)}</div>
+          <div class="rp-meta"><span>${msgCount} 条消息</span><span>${fmtTime(s.created_at)}</span></div>
+          ${preview ? `<div style="font-size:11px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px">${esc(preview)}</div>` : ''}
+        </div>
+      </label>
       <div class="rp-actions">
         <button class="btn sm ghost" onclick="event.stopPropagation();restoreRPSession('${s.id}')">🔄 恢复</button>
         <button class="btn red sm" onclick="event.stopPropagation();deleteRPSession('${s.id}')">🗑</button>
@@ -2131,6 +2148,48 @@ async function refreshRPSessions() {
 }
 
 function filterRPSessions() { refreshRPSessions(); }
+
+function toggleSelectAllRPSessions(checked) {
+  const el = document.getElementById('rpList');
+  if (!el) return;
+  const items = el.querySelectorAll('.rp-item');
+  items.forEach(item => {
+    const cb = item.querySelector('input[type="checkbox"]');
+    const sid = cb ? cb.getAttribute('onchange')?.match(/toggleRPSession\('(.*?)',/)?.[1] : null;
+    if (cb) cb.checked = checked;
+    if (sid) {
+      if (checked) _selectedRPSessions.add(sid);
+      else _selectedRPSessions.delete(sid);
+    }
+  });
+  refreshRPSessions();
+}
+
+function toggleRPSession(sid, checked) {
+  if (checked) _selectedRPSessions.add(sid);
+  else _selectedRPSessions.delete(sid);
+  refreshRPSessions();
+}
+
+async function batchDeleteRPSessions() {
+  const ids = Array.from(_selectedRPSessions);
+  if (!ids.length) return;
+  if (ids.length === sessions.length) { toast('至少保留一个会话', 'err'); return }
+  if (!confirm(`确定要删除选中的 ${ids.length} 个会话吗？此操作不可逆。`)) return;
+  const d = await apiPost('/sessions/batch-delete', { ids });
+  if (d.ok) {
+    _selectedRPSessions.clear();
+    sessions = sessions.filter(s => !ids.includes(s.id));
+    ids.forEach(sid => delete chatMsgs[sid]);
+    if (ids.includes(activeSid)) activeSid = sessions[0]?.id || '';
+    refreshRPSessions();
+    updateSessionTabs();
+    if (cur === 'chat') renderChatMessages();
+    toast(`已删除 ${d.deleted} 个会话`, 'ok');
+  } else {
+    toast(d.error || '删除失败', 'err');
+  }
+}
 
 async function restoreRPSession(sid) {
   await switchSession(sid);
@@ -2153,12 +2212,20 @@ async function deleteRPSession(sid) {
 }
 
 // ═══════════════ HISTORY ═══════════════
+let _selectedHistory = new Set();
 async function renderHistory(){
   const d=await api('/sessions');
   let h=`<div class="card"><div class="flex-between mb"><h3>📜 历史会话</h3><button class="btn sm" onclick="renderHistory()">🔄 刷新</button></div>`;
   if(!d.sessions||!d.sessions.length){h+='<div class="empty"><div class="icon">📜</div><p>暂无历史会话</p></div>'}
-  else{h+='<table><tr><th>时间</th><th>预览</th><th>轮次</th><th>操作</th></tr>';
-    d.sessions.forEach((s,i)=>{h+=`<tr><td>${fmtTime(s.mtime)}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.preview||'')}</td><td>${s.rounds||'-'}</td><td><button class="btn acc sm" onclick="resumeSession(${i})">恢复</button> <button class="btn sm" onclick="viewSessionDetail('${esc(s.path)}')">详情</button></td></tr>`});
+  else{
+    const allSelected = d.sessions.every(s => _selectedHistory.has(s.path));
+    h+=`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--glass-border)">
+      <label style="cursor:pointer;font-size:12px"><input type="checkbox" ${allSelected?'checked':''} onchange="toggleSelectAllHistory(this.checked,${d.sessions.length})" style="margin-right:4px">全选</label>
+      <button class="btn red sm" ${_selectedHistory.size>0?'':'disabled'} onclick="batchDeleteHistory()">🗑 删除选中${_selectedHistory.size>0?'('+_selectedHistory.size+')':''}</button>
+      ${_selectedHistory.size>0?`<button class="btn sm ghost" onclick="_selectedHistory.clear();renderHistory()">取消</button>`:''}
+    </div>
+    <table><tr><th>选择</th><th>时间</th><th>预览</th><th>轮次</th><th>操作</th></tr>`;
+    d.sessions.forEach((s,i)=>{h+=`<tr><td><input type="checkbox" ${_selectedHistory.has(s.path)?'checked':''} onchange="toggleHistorySelect('${esc(s.path)}',this.checked)"></td><td>${fmtTime(s.mtime)}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.preview||'')}</td><td>${s.rounds||'-'}</td><td><button class="btn acc sm" onclick="resumeSession(${i})">恢复</button> <button class="btn sm" onclick="viewSessionDetail('${esc(s.path)}')">详情</button></td></tr>`});
     h+='</table>'}
   h+='</div><div id="sdetail"></div>';C.innerHTML=h;
 }
@@ -2172,6 +2239,44 @@ async function viewSessionDetail(p){
     h += `<p style="color:var(--text3);font-size:12px">${d.error||'无法加载会话详情'}</p>`;
   }
   h+='</div>';document.getElementById('sdetail').innerHTML=h;
+}
+function toggleSelectAllHistory(checked, count) {
+  const el = C;
+  if (!el) return;
+  const cbs = el.querySelectorAll('table input[type="checkbox"]');
+  cbs.forEach(cb => { cb.checked = checked; });
+  // We need paths from the API. Just re-render which updates _selectedHistory.
+  // For select all, we'll use a simpler approach:
+  if (checked) {
+    // Get paths from current table rows
+    el.querySelectorAll('table tr').forEach(tr => {
+      const pathInput = tr.querySelector('input[type="checkbox"]');
+      if (pathInput) {
+        const val = pathInput.getAttribute('onchange')?.match(/toggleHistorySelect\('(.*?)',/)?.[1];
+        if (val) _selectedHistory.add(val);
+      }
+    });
+  } else {
+    _selectedHistory.clear();
+  }
+  renderHistory();
+}
+function toggleHistorySelect(path, checked) {
+  if (checked) _selectedHistory.add(path);
+  else _selectedHistory.delete(path);
+}
+async function batchDeleteHistory() {
+  const paths = Array.from(_selectedHistory);
+  if (!paths.length) return;
+  if (!confirm(`确定要删除选中的 ${paths.length} 个历史记录吗？此操作不可逆。`)) return;
+  const d = await apiPost('/logs/batch-delete', { paths });
+  if (d.ok) {
+    _selectedHistory.clear();
+    toast(`已删除 ${d.deleted} 个历史记录`, 'ok');
+    renderHistory();
+  } else {
+    toast(d.error || '删除失败', 'err');
+  }
 }
 
 // ═══════════════ ENHANCED GROUP CHAT ═══════════════
