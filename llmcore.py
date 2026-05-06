@@ -767,6 +767,15 @@ class ToolClient:
         self.total_cd_tokens = 0
 
     def chat(self, messages, tools=None):
+        tools = json.loads(json.dumps(tools, ensure_ascii=False)) if tools else tools
+        for t in tools or []:
+            f = t.get('function', {})
+            if f.get('name') == 'file_write':
+                props = f.get('parameters', {}).get('properties', {})
+                props.pop('content', None)
+                extra = '. Content must be placed in <file_content> tags in reply body, not in args'
+                if extra not in f.get('description', ''): f['description'] = f.get('description', '') + extra
+                break
         full_prompt = self._build_protocol_prompt(messages, tools)
         print("Full prompt length:", len(full_prompt), 'chars')
         gen = self.backend.ask(full_prompt)
