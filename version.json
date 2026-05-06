@@ -1,6 +1,6 @@
 {
-  "version": "0.8.5",
-  "changelog": "API Key自动验证(无效模型禁止切换)+宠物多点触控(单击/双击喂食/鞭策/V50)+右键菜单跟随+SSL修复+竞态修复",
+  "version": "0.8.6",
+  "changelog": "内置模型删除功能+会话切换竞态修复+importlib.reload stale属性清理+_agent_init_error重置修复",
   "download_url": "https://github.com/wxwsm666/GenericAgent-v1-web/archive/refs/heads/main.zip",
   "min_python": "3.10"
 }
