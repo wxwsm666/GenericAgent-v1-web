@@ -1322,7 +1322,7 @@ def api_update_run():
         return jsonify({'ok': False, 'error': '未找到下载地址，请检查更新源配置'})
     try:
         # Always use zip-based update (more reliable for non-technical users)
-        import tempfile, shutil
+        import tempfile, shutil, urllib.request
         zip_path = os.path.join(tempfile.gettempdir(), 'genericagent_update.zip')
         urllib.request.urlretrieve(download_url, zip_path)
         result['steps'].append({'step': '下载更新包', 'ok': True})
