@@ -7,6 +7,18 @@ def _load_mykeys():
     global _mykey_path
     try:
         import mykey; importlib.reload(mykey); _mykey_path = mykey.__file__
+        # Remove any stale attributes that were deleted from the file
+        # (importlib.reload only adds/updates, doesn't remove deleted names)
+        with open(_mykey_path, 'r', encoding='utf-8') as f:
+            source = f.read()
+        for attr in list(vars(mykey).keys()):
+            if attr.startswith('_') or not isinstance(vars(mykey)[attr], dict):
+                continue
+            # Check if this variable name appears as an assignment in the file
+            if not any(x in attr for x in ['api', 'config', 'cookie', 'mixin']):
+                continue
+            if not re.search(rf'^{attr}\s*=', source, re.MULTILINE):
+                delattr(mykey, attr)  # Stale attribute, remove it
         return {k: v for k, v in vars(mykey).items() if not k.startswith('_')}
     except ImportError: pass
     _mykey_path = p = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mykey.json')
@@ -14,10 +26,11 @@ def _load_mykeys():
     with open(p, encoding='utf-8') as f: return json.load(f)
 
 _mykey_path = _mykey_mtime = None
-def reload_mykeys():
+def reload_mykeys(force=False):
     global _mykey_mtime
-    mt = os.stat(_mykey_path).st_mtime_ns if _mykey_path else -1
-    if mt == _mykey_mtime: return globals().get('mykeys', {}), False
+    if not force:
+        mt = os.stat(_mykey_path).st_mtime_ns if _mykey_path else -1
+        if mt == _mykey_mtime: return globals().get('mykeys', {}), False
     mk = _load_mykeys(); _mykey_mtime = os.stat(_mykey_path).st_mtime_ns
     print(f'[Info] Load mykeys from {_mykey_path}')
     globals().update(mykeys=mk)

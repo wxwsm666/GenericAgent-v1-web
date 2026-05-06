@@ -335,8 +335,10 @@ def _merge_models():
     ag = get_agent()
     if ag is None:
         return {'all': [], 'llm': [], 'native': [], 'custom': _load_custom_models()}
+    # Force reload from file to avoid stale cache after model deletion
+    ag.load_llm_sessions(force=True)
     llm_list = ag.list_llms()
-    mk, _ = reload_mykeys()
+    mk, _ = reload_mykeys(force=True)
     vdata = _load_model_validation()
     # Build ordered key list matching llmclients iteration order in load_llm_sessions()
     key_order = []
@@ -429,8 +431,8 @@ def api_builtin_models_delete(key_name):
         return jsonify({'ok': False, 'error': 'mykey.py 不存在'}), 404
     with open(mykey_path, 'r', encoding='utf-8') as f:
         content = f.read()
-    # Remove the config block for this key_name
-    pattern = rf'^#?\s*{re.escape(key_name)}\s*=\s*\{{.*?^\}}'
+    # Remove the config block for this key_name (handles both single-line {} and multi-line {…})
+    pattern = rf'^#?\s*{re.escape(key_name)}\s*=\s*\{{.*?\}}'
     new_content, count = re.subn(pattern, '', content, flags=re.MULTILINE | re.DOTALL)
     if count == 0:
         return jsonify({'ok': False, 'error': f'未找到配置块: {key_name}'}), 404
@@ -445,7 +447,7 @@ def api_builtin_models_delete(key_name):
         for mixin_key, mixin_val in mk.items():
             if isinstance(mixin_val, dict) and 'llm_nos' in mixin_val:
                 old = new_content
-                mixin_block = rf'^({re.escape(mixin_key)}\s*=\s*\{{.*?^\}})'
+                mixin_block = rf'^({re.escape(mixin_key)}\s*=\s*\{{.*?\}})'
                 def _remove_ref(m):
                     block = m.group(0)
                     block = re.sub(mixin_pattern, '', block)
@@ -455,7 +457,7 @@ def api_builtin_models_delete(key_name):
                 new_content = re.sub(mixin_block, _remove_ref, new_content, flags=re.MULTILINE | re.DOTALL)
     with open(mykey_path, 'w', encoding='utf-8') as f:
         f.write(new_content)
-    # Reset agent so next request reinitializes
+    # Force agent to reload from updated file (stale attr cleanup in _load_mykeys handles removal)
     global agent
     agent = None
     return jsonify({'ok': True, 'removed': key_name})

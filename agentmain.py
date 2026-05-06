@@ -52,9 +52,9 @@ class GeneraticAgent:
         self.peer_hint = True
         self.load_llm_sessions()
 
-    def load_llm_sessions(self):
-        mykeys, changed = reload_mykeys()
-        if not changed and hasattr(self, 'llmclients'): return
+    def load_llm_sessions(self, force=False):
+        mykeys, changed = reload_mykeys(force=force)
+        if not force and not changed and hasattr(self, 'llmclients'): return
         try: oldhistory = self.llmclient.backend.history
         except: oldhistory = None
         llm_sessions = []
