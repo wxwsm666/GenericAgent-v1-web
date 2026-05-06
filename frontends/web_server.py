@@ -1769,8 +1769,9 @@ class SessionManager:
         self.active_sid = None
         self._sessions_file = os.path.join(project_dir, 'temp', 'sessions.json')
 
-    def create(self, name='New Chat'):
-        sid = uuid.uuid4().hex[:8]
+    def create(self, name='New Chat', sid=None):
+        if sid is None:
+            sid = uuid.uuid4().hex[:8]
         self.sessions[sid] = {
             'id': sid, 'name': name,
             'history': [], 'messages': [],
@@ -1804,11 +1805,12 @@ class SessionManager:
             return True
         return False
 
-    def save_current(self, ag):
-        """Save current agent state into the active session."""
-        if not self.active_sid or self.active_sid not in self.sessions:
+    def save_current(self, ag, sid=None):
+        """Save current agent state into the active session (or specific sid)."""
+        target = sid or self.active_sid
+        if not target or target not in self.sessions:
             return
-        s = self.sessions[self.active_sid]
+        s = self.sessions[target]
         s['history'] = list(ag.history)
         if ag.handler:
             s['working'] = dict(ag.handler.working) if ag.handler.working else {}
@@ -2402,10 +2404,9 @@ def api_chat_stream():
         ag.abort()
         ag._idle.wait(timeout=30)
     # Handle session
-    if sid and sid in session_mgr.sessions:
-        session_mgr.restore(ag, sid)
-    elif sid:
-        session_mgr.create('新对话')
+    if sid:
+        if sid not in session_mgr.sessions:
+            session_mgr.create('新对话', sid=sid)
         session_mgr.restore(ag, sid)
     if prompt.startswith('/'):
 
@@ -2464,7 +2465,7 @@ def api_chat_stream():
                     final = _clean_response(final)
                     if sid:
                         session_mgr.add_message(sid, 'assistant', final)
-                        session_mgr.save_current(ag)
+                        session_mgr.save_current(ag, sid)
                     yield f"data: {json.dumps({'type':'done','content':final})}\n\n"
                     # Trigger post-task reflection in background
                     if sid:
@@ -2474,7 +2475,7 @@ def api_chat_stream():
             ag.abort()
             # Save working state so continuation can recover it
             if sid:
-                session_mgr.save_current(ag)
+                session_mgr.save_current(ag, sid)
         except Exception as e:
             yield f"data: {json.dumps({'type':'error','content':str(e)})}\n\n"
     return Response(generate(), mimetype='text/event-stream',

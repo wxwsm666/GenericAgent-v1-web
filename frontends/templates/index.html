@@ -1722,7 +1722,7 @@ async function setPaneLayout(layoutId){
   _paneLayout = layoutId;
   // Ensure enough sessions exist for panes
   while(_paneSids.length < layout.panes - 1){
-    const s = sessions.find(x=>!x.id===activeSid && !_paneSids.includes(x.id)) || await createSession('窗'+(_paneSids.length+2));
+    const s = sessions.find(x=>x.id!==activeSid && !_paneSids.includes(x.id)) || await createSession('窗'+(_paneSids.length+2));
     _paneSids.push(s.id);
   }
   // Trim extra panes
