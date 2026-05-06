@@ -1389,6 +1389,69 @@ def api_update_run():
     except Exception as e:
         return jsonify({'ok': False, 'error': f'更新失败: {str(e)}'})
 
+@app.route('/api/update/repair', methods=['POST'])
+def api_update_repair():
+    """Repair/update by git pull or subprocess curl — zero urllib dependency.
+    Designed to work even when the main update pipeline is broken."""
+    import subprocess as _sp
+    result = {'ok': True, 'steps': []}
+    is_git = os.path.isdir(os.path.join(project_dir, '.git'))
+    if is_git:
+        try:
+            out = _sp.check_output(['git','pull'], cwd=project_dir, stderr=_sp.STDOUT, timeout=60, text=True)
+            result['steps'].append({'step': 'git pull 成功', 'ok': True, 'detail': out.strip()[-200:]})
+            result['need_restart'] = True
+            return jsonify(result)
+        except _sp.CalledProcessError as e:
+            return jsonify({'ok': False, 'error': f'git pull 失败: {e.stdout.strip()[-300:]}'})
+        except FileNotFoundError:
+            pass
+    # Non-git fallback: use subprocess curl/wget + unzip
+    download_url = 'https://github.com/wxwsm666/GenericAgent-v1-web/archive/refs/heads/main.zip'
+    import tempfile as _tmp
+    zip_path = os.path.join(_tmp.gettempdir(), 'ga_repair_update.zip')
+    for tool in ['curl', 'wget']:
+        try:
+            if tool == 'curl':
+                _sp.check_call(['curl','-L','-o',zip_path,download_url], timeout=120, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+            else:
+                _sp.check_call(['wget','-q','-O',zip_path,download_url], timeout=120, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+            result['steps'].append({'step': f'{tool} 下载成功', 'ok': True})
+            break
+        except (_sp.CalledProcessError, FileNotFoundError):
+            continue
+    else:
+        return jsonify({'ok': False, 'error': '未找到 curl 或 wget，无法下载。请手动 git pull 或重新下载解压。'})
+    # Extract and overwrite
+    import shutil as _sh
+    extract_dir = os.path.join(_tmp.gettempdir(), 'ga_repair_extract')
+    if os.path.isdir(extract_dir):
+        _sh.rmtree(extract_dir)
+    _sh.unpack_archive(zip_path, extract_dir)
+    result['steps'].append({'step': '解压成功', 'ok': True})
+    extracted_root = extract_dir
+    for root, dirs, files in os.walk(extract_dir):
+        if 'web_server.py' in files:
+            extracted_root = root; break
+    preserve = {'mykey.py', '.venv', '__pycache__'}
+    for item in os.listdir(extracted_root):
+        if item in preserve: continue
+        src = os.path.join(extracted_root, item)
+        dst = os.path.join(project_dir, item)
+        if os.path.isdir(src):
+            if os.path.isdir(dst): _sh.rmtree(dst)
+            _sh.copytree(src, dst)
+        else:
+            _sh.copy2(src, dst)
+    result['steps'].append({'step': '覆盖文件完成', 'ok': True})
+    try:
+        os.remove(zip_path)
+        _sh.rmtree(extract_dir)
+    except Exception:
+        pass
+    result['need_restart'] = True
+    return jsonify(result)
+
 @app.route('/api/update/restart', methods=['POST'])
 def api_update_restart():
     """Restart the web server (cross-platform)."""
