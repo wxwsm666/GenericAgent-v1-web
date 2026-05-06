@@ -458,8 +458,9 @@ def api_builtin_models_delete(key_name):
     with open(mykey_path, 'w', encoding='utf-8') as f:
         f.write(new_content)
     # Force agent to reload from updated file (stale attr cleanup in _load_mykeys handles removal)
-    global agent
+    global agent, _agent_init_error
     agent = None
+    _agent_init_error = None
     return jsonify({'ok': True, 'removed': key_name})
 
 @app.route('/api/models/custom/restore', methods=['POST'])
