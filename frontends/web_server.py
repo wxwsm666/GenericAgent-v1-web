@@ -1228,7 +1228,12 @@ def _urlopen_ssl(url, timeout=10):
     try:
         return urllib.request.urlopen(req, timeout=timeout, context=ssl.create_default_context())
     except Exception:
-        return urllib.request.urlopen(req, timeout=timeout, context=ssl._create_unverified_context())
+        try:
+            return urllib.request.urlopen(req, timeout=timeout, context=ssl._create_unverified_context())
+        except Exception:
+            pass
+    # Last resort: no SSL context at all
+    return urllib.request.urlopen(req, timeout=timeout)
 def _get_update_source():
     """Read update_source from mykey.py if configured."""
     try:
