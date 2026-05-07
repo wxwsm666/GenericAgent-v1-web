@@ -1368,6 +1368,9 @@ async function switchSession(sid){
   if(sid===activeSid)return;
   await apiPost('/sessions/switch',{session_id:sid});
   activeSid=sid;
+  // Clear streaming state for all panes to unstick send buttons
+  Object.keys(_streaming).forEach(k=>{delete _streaming[k];const b=document.getElementById('cstop'+k.replace('msgs',''));if(b)b.style.display='none';const sb=document.getElementById('csend'+k.replace('msgs',''));if(sb)sb.disabled=false});
+
   // Remove sid from _paneSids if it was assigned to another pane
   _paneSids=_paneSids.map(s=>s===sid?'':s);
   // Fetch latest messages from server
