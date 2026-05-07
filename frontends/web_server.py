@@ -172,6 +172,25 @@ def api_status():
         'history_len': len(ag.history),
     })
 
+# ──────────── Browser Extension Status ────────────
+@app.route('/api/browser/status')
+def api_browser_status():
+    """Check if Chrome extension (TMWD CDP Bridge) is connected."""
+    try:
+        from TMWebDriver import TMWebDriver
+        driver = TMWebDriver()
+        sessions = driver.get_all_sessions()
+        return jsonify({
+            'connected': len(sessions) > 0,
+            'tab_count': len(sessions),
+            'tabs': [{'id': s.get('id',''), 'url': s.get('url',''), 'title': s.get('title','')} for s in sessions],
+            'ext_dir': os.path.abspath(os.path.join(project_dir, 'assets', 'tmwd_cdp_bridge')),
+        })
+    except ImportError:
+        return jsonify({'connected': False, 'tab_count': 0, 'tabs': [], 'error': 'TMWebDriver not available'})
+    except Exception as e:
+        return jsonify({'connected': False, 'tab_count': 0, 'tabs': [], 'error': str(e)})
+
 # ──────────── Models ────────────
 @app.route('/api/llms')
 def api_llms():

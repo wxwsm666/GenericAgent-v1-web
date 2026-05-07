@@ -1683,7 +1683,7 @@ function renderChatView(){
     <div class="session-tabs" id="sessionTabs"></div>
     <div class="chat-layout-bar">
       ${pickerOpts}
-      <span style="margin-left:8px;display:flex;align-items:center;gap:4px"><button class="btn sm ghost" onclick="document.getElementById('fileInput').click()" title="上传文件">📎 文件</button><button class="btn sm ghost" onclick="pasteScreenshot()" title="粘贴截图 (或 Ctrl+V)">📷 截图</button></span>
+      <span style="margin-left:8px;display:flex;align-items:center;gap:4px"><span id="browserStatus" style="font-size:12px;cursor:pointer" title="浏览器扩展连接状态" onclick="checkBrowserStatus()">🔌</span><button class="btn sm ghost" onclick="document.getElementById('fileInput').click()" title="上传文件">📎 文件</button><button class="btn sm ghost" onclick="pasteScreenshot()" title="粘贴截图 (或 Ctrl+V)">📷 截图</button></span>
       <input type="file" id="fileInput" style="display:none" multiple onchange="handleFileSelect(event)">
     </div>
     <div class="chat-grid chat-grid-${_paneLayout}" id="chatArea">
@@ -1757,7 +1757,28 @@ async function setPaneLayout(layoutId){
 }
 
 function renderChat(){
-  loadSessions().then(()=>renderChatView());
+  loadSessions().then(()=>{renderChatView();checkBrowserStatus();});
+}
+async function checkBrowserStatus(){
+  const el = document.getElementById('browserStatus');
+  if(!el) return;
+  try{
+    const d = await api('/browser/status');
+    if(d.connected){
+      el.innerHTML = '🌐';
+      el.title = `浏览器已连接 (${d.tab_count}个标签页)`;
+      el.style.color = 'var(--green)';
+    }else{
+      el.innerHTML = '🔌';
+      el.title = '浏览器未连接 — 点击安装扩展';
+      el.style.color = 'var(--red)';
+      el.onclick = () => { if(confirm('浏览器扩展未连接，是否打开安装页面？')) window.open('chrome://extensions'); };
+    }
+  }catch(e){
+    el.innerHTML = '⚠️';
+    el.title = '无法检测浏览器状态';
+    el.style.color = 'var(--text3)';
+  }
 }
 
 let _dragSetup = false;

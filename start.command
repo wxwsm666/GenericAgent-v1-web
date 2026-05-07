@@ -85,22 +85,49 @@ if lsof -ti :18581 &>/dev/null; then
     echo -e "${YELLOW}   如需停止旧版: kill -9 \$(lsof -ti :18581)${NC}"
 fi
 
-# ── 启动 ──
+# ── 启动服务（后台运行）──
 echo -e "${GREEN}🚀 启动 Web UI...${NC}"
+cd "$SCRIPT_DIR/frontends"
+
+# Start server in background
+python3 web_server.py --port $PORT --no-browser &
+SERVER_PID=$!
+sleep 2
+
+# Check server is running
+if ! curl -s http://localhost:$PORT/api/status > /dev/null 2>&1; then
+  echo -e "${RED}❌ 服务启动失败，请检查日志${NC}"
+  read -p "按 Enter 退出..."
+  exit 1
+fi
+
 echo ""
-echo "  浏览器将自动打开:  http://localhost:$PORT"
-echo "  💡 关闭浏览器后，点击菜单栏 🧠 图标 → 「打开 Web UI」即可重新打开"
+echo "  浏览器已打开:  http://localhost:$PORT"
+echo "  💡 关闭浏览器后重新打开此页面即可继续使用"
 echo "  按 Ctrl+C 停止服务"
 echo ""
 
-cd "$SCRIPT_DIR/frontends"
-# Try tray_app first (stays in menu bar for easy re-access)
-python3 "$SCRIPT_DIR/tray_app.py" --port $PORT 2>/dev/null || {
-  # Fallback: run web server directly
-  echo -e "${YELLOW}⚠️  托盘启动失败，使用直接模式${NC}"
-  python3 web_server.py --port $PORT
-}
+# ── 打开浏览器 ──
+open "http://localhost:$PORT"
 
-# 保持终端打开
+# ── 检测浏览器扩展 ──
+echo -e "${CYAN}🔍 检测浏览器扩展...${NC}"
+EXT_STATUS=$(curl -s http://localhost:$PORT/api/browser/status 2>/dev/null || echo '{"connected":false}')
+EXT_CONNECTED=$(python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print('yes' if d.get('connected') else 'no')" <<< "$EXT_STATUS" 2>/dev/null || echo "no")
+
+if [ "$EXT_CONNECTED" = "yes" ]; then
+  TAB_COUNT=$(python3 -c "import sys,json; d=json.loads(sys.stdin.read()); print(d.get('tab_count',0))" <<< "$EXT_STATUS" 2>/dev/null || echo "0")
+  echo -e "${GREEN}✅ 浏览器扩展已连接 (${TAB_COUNT}个标签页)${NC}"
+else
+  echo -e "${YELLOW}⚠️  浏览器扩展未连接 — web_scan/web_execute_js 将不可用${NC}"
+  echo -e "  一键安装: 双击 ${CYAN}setup_extension.command${NC}"
+  echo ""
+fi
+
 echo ""
-read -p "服务已停止，按 Enter 关闭窗口..."
+
+# 保持终端打开，等待服务进程
+wait $SERVER_PID 2>/dev/null
+echo ""
+echo "服务已停止，按 Enter 关闭窗口..."
+read
