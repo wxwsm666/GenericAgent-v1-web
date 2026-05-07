@@ -183,7 +183,7 @@ class GeneraticAgent:
             finally:
                 if self.stop_sig:
                     print('User aborted the task.')
-                    display_queue.put({'done': '⏹ 任务已被用户中断', 'source': 'system'})
+                    display_queue.put({'aborted': True, 'source': 'system'})
                     # Belt-and-suspenders: ensure interruption context is captured
                     if not getattr(self, '_last_interruption', None) and handler:
                         agent_turns = sum(1 for x in handler.history_info

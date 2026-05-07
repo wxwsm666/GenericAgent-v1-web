@@ -1939,9 +1939,11 @@ async function sendChat(targetId){
           else if(d.type==='done'){if(thinkEl)thinkEl.remove();
             const final=d.content||full;
             if(msgEl){const bub=msgEl.querySelector('.bub');if(bub)bub.innerHTML=fmtContent(final);msgEl.removeAttribute('id')}
-            else appendMsgEl('assistant',final,ts,targetId);
-            if(!chatMsgs[sid])chatMsgs[sid]=[];
-            chatMsgs[sid].push({role:'assistant',content:final,ts:new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})});syncHistoryAfterMsg(sid)}
+            else if(!d.aborted&&final) appendMsgEl('assistant',final,ts,targetId);
+            if(!d.aborted&&final){
+              if(!chatMsgs[sid])chatMsgs[sid]=[];
+              chatMsgs[sid].push({role:'assistant',content:final,ts:new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})});syncHistoryAfterMsg(sid)
+            }}
           else if(d.type==='error'){if(thinkEl)thinkEl.remove();appendMsgEl('assistant','❌ '+d.content,ts,targetId)}
         }catch(e){}
       }

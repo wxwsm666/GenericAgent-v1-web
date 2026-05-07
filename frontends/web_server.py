@@ -2503,6 +2503,9 @@ def api_chat_stream():
                     response = item['next']
                     clean = _clean_response(response)
                     yield f"data: {json.dumps({'type':'chunk','content':clean})}\n\n"
+                if 'aborted' in item:
+                    yield f"data: {json.dumps({'type':'done','content':'','aborted':True})}\n\n"
+                    break
                 if 'done' in item:
                     final = item.get('done', response)
                     final = _clean_response(final)
