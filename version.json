@@ -1,6 +1,6 @@
 {
-  "version": "0.8.6",
-  "changelog": "内置模型删除功能+会话切换竞态修复+importlib.reload stale属性清理+_agent_init_error重置修复",
+  "version": "0.8.7",
+  "changelog": "前端7项bug修复:拖拽监听泄漏/重启崩溃/引用跨窗格/批量删除残留/斜杠命令异常/消息索引错乱/时间戳共用",
   "download_url": "https://github.com/wxwsm666/GenericAgent-v1-web/archive/refs/heads/main.zip",
   "min_python": "3.10"
 }
