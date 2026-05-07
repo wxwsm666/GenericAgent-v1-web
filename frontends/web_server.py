@@ -177,11 +177,23 @@ def api_status():
 def api_browser_status():
     """Check if Chrome extension (TMWD CDP Bridge) is connected."""
     try:
-        from TMWebDriver import TMWebDriver
-        driver = TMWebDriver()
-        sessions = driver.get_all_sessions()
+        # Use agent's cached check to avoid starting duplicate servers
+        ag = get_agent()
+        if ag is not None:
+            from agentmain import _check_browser_available, _browser_tools_available, _browser_check_ts
+            connected = _check_browser_available()
+        else:
+            connected = False
+        # Get session details if available
+        sessions = []
+        try:
+            import ga
+            if ga.driver is not None:
+                sessions = ga.driver.get_all_sessions()
+        except Exception:
+            pass
         return jsonify({
-            'connected': len(sessions) > 0,
+            'connected': connected,
             'tab_count': len(sessions),
             'tabs': [{'id': s.get('id',''), 'url': s.get('url',''), 'title': s.get('title','')} for s in sessions],
             'ext_dir': os.path.abspath(os.path.join(project_dir, 'assets', 'tmwd_cdp_bridge')),

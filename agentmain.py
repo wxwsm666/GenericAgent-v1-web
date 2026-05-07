@@ -17,6 +17,48 @@ def load_tool_schema(suffix=''):
     TOOLS_SCHEMA = json.loads(TS if os.name == 'nt' else TS.replace('powershell', 'bash'))
 load_tool_schema()
 
+_browser_tools_available = None  # cached: None=unchecked, True/False=result
+_browser_check_ts = 0  # timestamp of last check
+
+def _check_browser_available():
+    """Check if Chrome extension is connected. Cached for 60s, then re-check."""
+    global _browser_tools_available, _browser_check_ts
+    now = time.time()
+    if _browser_tools_available is not None and now - _browser_check_ts < 60:
+        return _browser_tools_available
+    try:
+        from TMWebDriver import TMWebDriver
+        # Check if driver already exists as singleton in ga module
+        import ga
+        if ga.driver is not None and hasattr(ga.driver, 'get_all_sessions'):
+            sessions = ga.driver.get_all_sessions()
+            _browser_tools_available = len(sessions) > 0
+        else:
+            # Try to detect if extension could be reachable without starting servers
+            import socket
+            s = socket.socket()
+            s.settimeout(0.5)
+            result = s.connect_ex(('127.0.0.1', 18765))
+            s.close()
+            _browser_tools_available = (result == 0)  # WS server is running = extension connected
+    except Exception:
+        _browser_tools_available = False
+    _browser_check_ts = now
+    return _browser_tools_available
+
+def refresh_browser_status():
+    """Force re-check browser extension status (called from API)."""
+    global _browser_tools_available, _browser_check_ts
+    _browser_tools_available = None
+    _browser_check_ts = 0
+    return _check_browser_available()
+
+def get_active_tools():
+    """Return tools schema, filtering out browser tools if extension not connected."""
+    if _check_browser_available():
+        return TOOLS_SCHEMA
+    return [t for t in TOOLS_SCHEMA if t['function']['name'] not in ('web_scan', 'web_execute_js')]
+
 lang_suffix = '_en' if os.environ.get('GA_LANG', '') == 'en' else ''
 mem_dir = os.path.join(script_dir, 'memory')
 if not os.path.exists(mem_dir): os.makedirs(mem_dir)
@@ -159,8 +201,8 @@ class GeneraticAgent:
                 if ps > 0: handler.working['key_info'] += f'\n[SYSTEM] 此为 {ps} 个对话前设置的key_info，若已在新任务，先更新或清除工作记忆。\n'
             self.handler = handler
             # although new handler, the **full** history is in llmclient, so it is full history!
-            gen = agent_runner_loop(self.llmclient, sys_prompt, raw_query, 
-                                handler, TOOLS_SCHEMA, max_turns=70, verbose=self.verbose)
+            gen = agent_runner_loop(self.llmclient, sys_prompt, raw_query,
+                                handler, get_active_tools(), max_turns=70, verbose=self.verbose)
             try:
                 full_resp = ""; last_pos = 0
                 for chunk in gen:
