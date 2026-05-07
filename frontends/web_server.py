@@ -17,7 +17,7 @@ project_dir = os.path.dirname(script_dir)
 sys.path.insert(0, project_dir)
 sys.path.insert(0, script_dir)
 
-from flask import Flask, render_template, request, Response, jsonify, send_from_directory
+from flask import Flask, render_template, request, Response, jsonify, send_from_directory, make_response
 from agentmain import GeneraticAgent
 import chatapp_common
 from continue_cmd import list_sessions, extract_ui_messages, reset_conversation, handle_frontend_command
@@ -83,7 +83,11 @@ def _clean_response(text):
 # ──────────── Pages ────────────
 @app.route('/')
 def index():
-    return render_template('index.html', version=VERSION)
+    resp = make_response(render_template('index.html', version=VERSION))
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 # ──────────── Chat API ────────────
 @app.route('/api/chat', methods=['POST'])
@@ -1846,7 +1850,12 @@ class SessionManager:
         # Force abort if running, then wait for daemon thread to truly stop
         if ag.is_running:
             ag.abort()
-            ag._idle.wait(timeout=30)
+            if not ag._idle.wait(timeout=30):
+                print(f'[WARN] Agent did not stop within 30s during session switch — forcing continue', flush=True)
+                # Force-reset state to unblock
+                ag.is_running = False
+                ag.stop_sig = False
+                ag._idle.set()
         self.active_sid = sid
         s = self.sessions[sid]
         ag.history = list(s.get('history', []))
@@ -2445,7 +2454,11 @@ def api_chat_stream():
     # Abort running task before session restore (restore will wait for idle)
     if ag.is_running:
         ag.abort()
-        ag._idle.wait(timeout=30)
+        if not ag._idle.wait(timeout=30):
+            print(f'[WARN] Agent stuck for 30s — force-reset', flush=True)
+            ag.is_running = False
+            ag.stop_sig = False
+            ag._idle.set()
     # Handle session
     if sid:
         if sid not in session_mgr.sessions:

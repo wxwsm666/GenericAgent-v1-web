@@ -1366,7 +1366,22 @@ async function deleteSession(sid){
 }
 async function switchSession(sid){
   if(sid===activeSid)return;
-  await apiPost('/sessions/switch',{session_id:sid});
+  // Abort any running task before switching (prevents stale streaming state)
+  try{await fetch('/api/abort',{method:'POST'});}catch(e){}
+  // Small delay to let backend abort settle
+  await new Promise(r=>setTimeout(r,150));
+  try{
+    const r = await apiPost('/sessions/switch',{session_id:sid});
+    if(!r.ok){
+      console.error('[switchSession] backend refused:', r);
+      toast('切换失败: '+(r.error||'未知错误'),'err');
+      return;
+    }
+  }catch(e){
+    console.error('[switchSession] fetch error:', e);
+    toast('切换失败: '+e.message,'err');
+    return;
+  }
   activeSid=sid;
   // Clear streaming state for all panes to unstick send buttons
   Object.keys(_streaming).forEach(k=>{delete _streaming[k];const b=document.getElementById('cstop'+k.replace('msgs',''));if(b)b.style.display='none';const sb=document.getElementById('csend'+k.replace('msgs',''));if(sb)sb.disabled=false});
@@ -1891,6 +1906,12 @@ async function sendChat(targetId){
   const quoteData = _quotedMsg[targetId]; clearQuote(targetId);
   try{
     const res=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,session_id:sid,files:filePaths,quote:quoteData||undefined})});
+    if(!res.ok){
+      let errMsg = '服务器错误 ('+res.status+')';
+      try{const ed=await res.json();errMsg=ed.error||errMsg}catch(e){}
+      throw new Error(errMsg);
+    }
+    if(!res.body){throw new Error('浏览器不支持流式响应');}
     const reader=res.body.getReader();const dec=new TextDecoder();let buf='';
     while(true){
       const{done,value}=await reader.read();if(done)break;
