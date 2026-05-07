@@ -182,6 +182,11 @@ echo   Tip: Close browser? Click tray icon to reopen.
 echo   Press Ctrl+C or close this window to stop.
 echo ================================================================
 echo.
+echo   [TIP] 浏览器控制功能需要安装 Chrome 扩展
+echo         双击运行 setup_extension.bat 一键安装
+echo         或手动: chrome://extensions -^> 开发者模式 -^> 加载扩展
+echo         扩展目录: %PROJECT_DIR%assets\tmwd_cdp_bridge
+echo.
 
 :: Try web_server directly first (more reliable on Windows)
 "%PROJECT_DIR%.venv\Scripts\python.exe" -c "import flask; print('Flask OK')" >nul 2>&1
