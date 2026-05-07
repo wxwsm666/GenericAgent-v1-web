@@ -1,6 +1,6 @@
 {
-  "version": "0.8.7",
-  "changelog": "前端7项bug修复:拖拽监听泄漏/重启崩溃/引用跨窗格/批量删除残留/斜杠命令异常/消息索引错乱/时间戳共用",
+  "version": "0.8.8",
+  "changelog": "会话切换死锁修复:切换时显式abort+等待/switchSession错误处理/sendChat响应状态检查/idle超时强制复位/防缓存旧JS",
   "download_url": "https://github.com/wxwsm666/GenericAgent-v1-web/archive/refs/heads/main.zip",
   "min_python": "3.10"
 }
