@@ -1475,10 +1475,11 @@ function renderChatMessages(targetId, msgsOverride){
   });
   if(cur) rounds.push(cur);
   const foldKey = 'fold-round-'+sid;
-  // Build flat message index map for quote feature
+  // Build flat message index map for quote feature (per-pane)
   window._msgLookup = window._msgLookup||{};
+  window._msgLookup[elId] = {};
   let msgIdx = 0;
-  msgs.forEach(m=>{ window._msgLookup[msgIdx] = m; msgIdx++; });
+  msgs.forEach(m=>{ window._msgLookup[elId][msgIdx] = m; msgIdx++; });
   let mi = 0;
   rounds.forEach((r,i)=>{
     const foldId = foldKey+'-'+i;
@@ -1493,47 +1494,53 @@ function renderChatMessages(targetId, msgsOverride){
       <span class="round-fold-meta">${r.user?.ts||''}</span>
     </div><div class="round-fold-body"></div>`;
     const body = folder.querySelector('.round-fold-body');
-    body.appendChild(buildMsgEl(r.user, mi++));
-    if(r.assistant) body.appendChild(buildMsgEl(r.assistant, mi++));
+    body.appendChild(buildMsgEl(r.user, mi++, elId));
+    if(r.assistant) body.appendChild(buildMsgEl(r.assistant, mi++, elId));
     el.appendChild(folder);
   });
   scrollChat(targetId);
 }
-let _quotedMsg = null; // {role, content} for current quote
+let _quotedMsg = {}; // targetId -> {role, content} per-pane quote
 
-function setQuoteIdx(role, idx){
-  const m = (window._msgLookup||{})[idx];
+function setQuoteIdx(role, idx, targetId){
+  const tid = targetId || 'msgs0';
+  const paneLookup = (window._msgLookup||{})[tid] || {};
+  const m = paneLookup[idx];
   if(!m) return;
-  _quotedMsg = {role:role, content:m.content||''};
-  showQuoteCard();
+  _quotedMsg[tid] = {role:role, content:m.content||''};
+  showQuoteCard(tid);
   toast('已引用消息，发送时将附带引用内容','ok');
 }
-function setQuote(role, content){
-  _quotedMsg = {role:role, content:content||''};
-  showQuoteCard();
+function setQuote(role, content, targetId){
+  const tid = targetId || 'msgs0';
+  _quotedMsg[tid] = {role:role, content:content||''};
+  showQuoteCard(tid);
   toast('已引用消息','ok');
 }
-function clearQuote(){
-  _quotedMsg = null;
-  const qc = document.querySelector('.quote-card'); if(qc) qc.remove();
-}
-function showQuoteCard(){
-  if(!_quotedMsg) return;
-  // Remove existing quote card
+function clearQuote(targetId){
+  const tid = targetId || 'msgs0';
+  delete _quotedMsg[tid];
   document.querySelectorAll('.quote-card').forEach(el=>el.remove());
-  // Find all chat input containers
-  const inputs = document.querySelectorAll('.chat-input');
-  inputs.forEach(inp=>{
-    const card = document.createElement('div');
-    card.className = 'quote-card';
-    const roleLabel = _quotedMsg.role==='user'?'👤 用户':'🤖 AI';
-    const preview = (_quotedMsg.content||'').replace(/<[^>]*>/g,'').substring(0,100);
-    card.innerHTML = `<span class="qc-role">${roleLabel}</span><span class="qc-text">${esc(preview)}</span><span class="qc-close" onclick="clearQuote()">×</span>`;
-    inp.insertBefore(card, inp.firstChild);
-  });
+}
+function showQuoteCard(targetId){
+  const tid = targetId || 'msgs0';
+  const q = _quotedMsg[tid];
+  if(!q) return;
+  // Remove existing quote cards
+  document.querySelectorAll('.quote-card').forEach(el=>el.remove());
+  // Find the chat input container for this pane
+  const pane = document.getElementById('pane_' + tid);
+  const inp = pane ? pane.querySelector('.chat-input') : document.querySelector('.chat-input');
+  if(!inp) return;
+  const card = document.createElement('div');
+  card.className = 'quote-card';
+  const roleLabel = q.role==='user'?'👤 用户':'🤖 AI';
+  const preview = (q.content||'').replace(/<[^>]*>/g,'').substring(0,100);
+  card.innerHTML = `<span class="qc-role">${roleLabel}</span><span class="qc-text">${esc(preview)}</span><span class="qc-close" onclick="clearQuote('${tid}')">×</span>`;
+  inp.insertBefore(card, inp.firstChild);
 }
 
-function buildMsgEl(m, idx){
+function buildMsgEl(m, idx, targetId){
   const d=document.createElement('div');d.className='msg '+m.role;
   const role=m.role||'user';
   const content=m.content||'';
@@ -1543,7 +1550,7 @@ function buildMsgEl(m, idx){
   d.innerHTML=`<div class="av">${role==='user'?'👤':'🤖'}</div><div class="msg-body"><div class="bub">${fmtContent(content)}</div><div class="ts">${timeStr}</div></div>`;
   if(idx!==undefined){
     const btn=document.createElement('button');btn.className='quote-btn';btn.textContent='💬';
-    btn.onclick=function(e){e.stopPropagation();setQuoteIdx(role,idx);};
+    btn.onclick=function(e){e.stopPropagation();setQuoteIdx(role,idx,targetId);};
     d.querySelector('.msg-body').appendChild(btn);
   }
   return d;
@@ -1551,7 +1558,7 @@ function buildMsgEl(m, idx){
 function appendMsgEl(role,content,ts,targetId){
   const elId = targetId || 'msgs0';
   const el=document.getElementById(elId);if(!el)return null;
-  const msgEl = buildMsgEl({role,content,ts});
+  const msgEl = buildMsgEl({role,content,ts}, undefined, targetId);
   el.appendChild(msgEl);
   scrollChat(targetId);
   return msgEl;
@@ -1735,10 +1742,13 @@ function renderChat(){
   loadSessions().then(()=>renderChatView());
 }
 
+let _dragSetup = false;
 function setupDragDrop(){
   const main = document.getElementById('main');
   const overlay = document.getElementById('chatDragOverlay');
   if(!main||!overlay)return;
+  if(_dragSetup) return;
+  _dragSetup = true;
   let counter=0;
   main.addEventListener('dragenter',e=>{e.preventDefault();counter++;if(counter===1)overlay.classList.add('show')});
   main.addEventListener('dragleave',e=>{e.preventDefault();counter--;if(counter===0)overlay.classList.remove('show')});
@@ -1865,15 +1875,17 @@ async function sendChat(targetId){
   const filePaths=uploadedFiles.map(f=>f.path);uploadedFiles=[];renderFileChips();
 
   if(msg.startsWith('/')){
-    const d=await apiPost('/chat/stream',{message:msg,session_id:sid,files:filePaths,quote:_quotedMsg||undefined});
-    appendMsg('assistant',d.content||JSON.stringify(d),ts,targetId);
-    _quotedMsg=null;clearQuote();return;
+    try{
+      const d=await apiPost('/chat/stream',{message:msg,session_id:sid,files:filePaths,quote:_quotedMsg[targetId]||undefined});
+      appendMsg('assistant',d.content||JSON.stringify(d),new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),targetId);
+    }catch(e){appendMsg('assistant','❌ '+e.message,new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}),targetId)}
+    clearQuote(targetId);return;
   }
   _streaming[targetId]=true;if(csendBtn)csendBtn.disabled=true;
   const sb=document.getElementById(stopId);if(sb){sb.style.display='';sb.onclick=async()=>{await fetch('/api/abort',{method:'POST'});}}
   const thinkEl=appendThink(targetId);let full='',msgEl=null;
   const toolCards={};let toolSeq=0; // track tool card elements
-  const quoteData = _quotedMsg; _quotedMsg=null; clearQuote();
+  const quoteData = _quotedMsg[targetId]; clearQuote(targetId);
   try{
     const res=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg,session_id:sid,files:filePaths,quote:quoteData||undefined})});
     const reader=res.body.getReader();const dec=new TextDecoder();let buf='';
@@ -1926,7 +1938,7 @@ async function sendChat(targetId){
             if(msgEl){const bub=msgEl.querySelector('.bub');if(bub)bub.innerHTML=fmtContent(final);msgEl.removeAttribute('id')}
             else appendMsgEl('assistant',final,ts,targetId);
             if(!chatMsgs[sid])chatMsgs[sid]=[];
-            chatMsgs[sid].push({role:'assistant',content:final,ts});syncHistoryAfterMsg(sid)}
+            chatMsgs[sid].push({role:'assistant',content:final,ts:new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})});syncHistoryAfterMsg(sid)}
           else if(d.type==='error'){if(thinkEl)thinkEl.remove();appendMsgEl('assistant','❌ '+d.content,ts,targetId)}
         }catch(e){}
       }
@@ -2181,6 +2193,7 @@ async function batchDeleteRPSessions() {
     _selectedRPSessions.clear();
     sessions = sessions.filter(s => !ids.includes(s.id));
     ids.forEach(sid => delete chatMsgs[sid]);
+    _paneSids = _paneSids.map(s => ids.includes(s) ? '' : s);
     if (ids.includes(activeSid)) activeSid = sessions[0]?.id || '';
     refreshRPSessions();
     updateSessionTabs();
@@ -3570,15 +3583,22 @@ async function saveOnboardKey(){
 async function doRestart(){
   if(!confirm('确定立即重启服务？正在进行的任务将中断。'))return;
   const st=document.getElementById('updateStatus');
-  st.innerHTML='<p style="font-size:13px;color:var(--orange)">🔄 正在重启...</p>';
+  if(st){
+    st.innerHTML='<p style="font-size:13px;color:var(--orange)">🔄 正在重启...</p>';
+  }
   try{await apiPost('/update/restart')}catch(e){/* expected - server dies */}
-  // Poll until server comes back
-  st.innerHTML+='<p style="font-size:12px;color:var(--text2)">⏳ 等待服务恢复...</p>';
+  if(st){
+    st.innerHTML+='<p style="font-size:12px;color:var(--text2)">⏳ 等待服务恢复...</p>';
+  }
   for(let i=0;i<30;i++){
     await new Promise(r=>setTimeout(r,1000));
     try{const r=await fetch('/api/dashboard');if(r.ok){window.location.reload();return}}catch(e){}
   }
-  st.innerHTML='<p style="font-size:13px;color:var(--red)">❌ 重启超时，请手动重启 start.bat / start.command</p>';
+  if(st){
+    st.innerHTML='<p style="font-size:13px;color:var(--red)">❌ 重启超时，请手动重启 start.bat / start.command</p>';
+  } else {
+    window.location.reload();
+  }
 }
 
 async function doStopServer(){
