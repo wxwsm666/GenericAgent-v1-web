@@ -79,10 +79,11 @@ if lsof -ti :$PORT &>/dev/null; then
     kill -9 $(lsof -ti :$PORT) 2>/dev/null || true
     sleep 0.5
 fi
-# Also warn about legacy port 18581
+# Also kill legacy port 18581 if occupied
 if lsof -ti :18581 &>/dev/null; then
-    echo -e "${YELLOW}⚠️  检测到旧版服务在端口 18581 运行中${NC}"
-    echo -e "${YELLOW}   如需停止旧版: kill -9 \$(lsof -ti :18581)${NC}"
+    echo -e "${YELLOW}⚠️  检测到旧版服务在端口 18581 运行中，正在释放...${NC}"
+    kill -9 $(lsof -ti :18581) 2>/dev/null || true
+    sleep 0.5
 fi
 
 # ── 启动服务（后台运行）──

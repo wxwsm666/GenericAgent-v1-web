@@ -1,6 +1,6 @@
 {
-  "version": "0.8.8",
-  "changelog": "会话切换死锁修复:切换时显式abort+等待/switchSession错误处理/sendChat响应状态检查/idle超时强制复位/防缓存旧JS",
+  "version": "0.8.9",
+  "changelog": "端口冲突修复:kill旧版18581进程/会话切换死锁修复/引用回复+中断续接",
   "download_url": "https://github.com/wxwsm666/GenericAgent-v1-web/archive/refs/heads/main.zip",
   "min_python": "3.10"
 }

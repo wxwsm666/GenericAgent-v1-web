@@ -173,6 +173,11 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%PORT%" ^| findstr "LISTENI
     echo [INFO] Port %PORT% in use, killing process %%a...
     taskkill /F /PID %%a >nul 2>&1
 )
+:: Also kill legacy port 18581
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":18581" ^| findstr "LISTENING" 2^>nul') do (
+    echo [INFO] Legacy port 18581 in use, killing process %%a...
+    taskkill /F /PID %%a >nul 2>&1
+)
 
 echo ================================================================
 echo   Starting Web UI...
